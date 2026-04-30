@@ -1,0 +1,76 @@
+# Parse Warnings
+
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info.h`
+  - context: `SPECIES_EGG`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_ICY_SNOW`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_POLAR`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_TUNDRA`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_CONTINENTAL`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_GARDEN`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_ELEGANT`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_MEADOW`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_MODERN`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_MARINE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_ARCHIPELAGO`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_HIGH_PLAINS`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_SANDSTORM`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_RIVER`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_MONSOON`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_SAVANNA`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_SUN`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_OCEAN`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_JUNGLE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_FANCY`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_VIVILLON_POKEBALL`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLABEBE_RED`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLABEBE_YELLOW`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLABEBE_ORANGE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLABEBE_BLUE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLABEBE_WHITE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_RED`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_YELLOW`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_ORANGE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_BLUE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_WHITE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLOETTE_ETERNAL`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLORGES_RED`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLORGES_YELLOW`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLORGES_ORANGE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLORGES_BLUE`
+- speciesName no detectado - `/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/src/data/pokemon/species_info/gen_6_families.h`
+  - context: `SPECIES_FLORGES_WHITE`

@@ -1,0 +1,140 @@
+{
+  "mode": "add",
+  "constant_name": "SPECIES_GUITEST_1777513085",
+  "project_root": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion",
+  "steps": [
+    {
+      "target_file": "include/constants/species.h",
+      "action": "insert",
+      "reason": "Agregar nueva constante de especie",
+      "new_text": "#define SPECIES_GUITEST_1777513085                      1575",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": "#define SPECIES_EGG",
+      "risk_level": "high",
+      "warnings": []
+    },
+    {
+      "target_file": "include/constants/species.h",
+      "action": "update",
+      "reason": "Actualizar SPECIES_EGG para conservar orden",
+      "new_text": "#define SPECIES_EGG                                     (SPECIES_GUITEST_1777513085 + 1)",
+      "old_text": "#define SPECIES_EGG                                     (SPECIES_TESTMON2 + 1)",
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "high",
+      "warnings": []
+    },
+    {
+      "target_file": "src/data/pokemon/species_info/gen_9_families.h",
+      "action": "insert",
+      "reason": "Agregar bloque de species info",
+      "new_text": "\n    [SPECIES_GUITEST_1777513085] =\n    {\n        .baseHP        = 60,\n        .baseAttack    = 61,\n        .baseDefense   = 62,\n        .baseSpeed     = 63,\n        .baseSpAttack  = 64,\n        .baseSpDefense = 65,\n        .types = MON_TYPES(TYPE_GRASS, TYPE_POISON),\n        .catchRate = 45,\n        .expYield = 64,\n        .genderRatio = PERCENT_FEMALE(12.5),\n        .eggCycles = 20,\n        .friendship = 70,\n        .growthRate = GROWTH_MEDIUM_FAST,\n        .eggGroups = MON_EGG_GROUPS(EGG_GROUP_MONSTER),\n        .abilities = { ABILITY_OVERGROW, ABILITY_NONE, ABILITY_CHLOROPHYLL },\n        .bodyColor = BODY_COLOR_GREEN,\n        .noFlip = FALSE,\n        .speciesName = _(\"GuiTestmon\"),\n        .cryId = CRY_NONE,\n        .natDexNum = NATIONAL_DEX_NONE,\n        .categoryName = _(\"Custom\"),\n        .height = 7,\n        .weight = 69,\n        .description = COMPOUND_STRING(\n            \"A custom species added by tool.\\n\"\n            \"Replace this description later.\"),\n        .pokemonScale = 256,\n        .pokemonOffset = 0,\n        .trainerScale = 256,\n        .trainerOffset = 0,\n        .frontPic = gMonFrontPic_Guitest1777513085,\n        .frontPicSize = MON_COORDS_SIZE(64, 64),\n        .frontPicYOffset = 0,\n        .frontAnimFrames = sAnims_SingleFramePlaceHolder,\n        .frontAnimId = ANIM_V_SQUISH_AND_BOUNCE,\n        .backPic = gMonBackPic_Guitest1777513085,\n        .backPicSize = MON_COORDS_SIZE(64, 64),\n        .backPicYOffset = 7,\n        .backAnimId = BACK_ANIM_NONE,\n        .palette = gMonPalette_Guitest1777513085,\n        .shinyPalette = gMonShinyPalette_Guitest1777513085,\n        .iconSprite = gMonIcon_Guitest1777513085,\n        .iconPalIndex = 0,\n        FOOTPRINT(Guitest1777513085)\n        .levelUpLearnset = sNoneLevelUpLearnset,\n        .teachableLearnset = sNoneTeachableLearnset,\n        .eggMoveLearnset = sNoneEggMoveLearnset,\n    },\n",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": "#ifdef __INTELLISENSE__",
+      "risk_level": "high",
+      "warnings": []
+    },
+    {
+      "target_file": "src/data/graphics/pokemon.h",
+      "action": "insert",
+      "reason": "Agregar simbolos graficos de especie",
+      "new_text": "\n    const u32 gMonFrontPic_Guitest1777513085[] = INCBIN_U32(\"graphics/pokemon/guitestmon/front.4bpp.smol\");\n    const u16 gMonPalette_Guitest1777513085[] = INCBIN_U16(\"graphics/pokemon/guitestmon/normal.gbapal\");\n    const u32 gMonBackPic_Guitest1777513085[] = INCBIN_U32(\"graphics/pokemon/guitestmon/back.4bpp.smol\");\n    const u16 gMonShinyPalette_Guitest1777513085[] = INCBIN_U16(\"graphics/pokemon/guitestmon/shiny.gbapal\");\n    const u8 gMonIcon_Guitest1777513085[] = INCBIN_U8(\"graphics/pokemon/guitestmon/icon.4bpp\");\n#if P_FOOTPRINTS\n    const u8 gMonFootprint_Guitest1777513085[] = INCBIN_U8(\"graphics/pokemon/guitestmon/footprint.1bpp\");\n#endif //P_FOOTPRINTS\n",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": "const u32 gMonFrontPic_Egg[]",
+      "risk_level": "medium",
+      "warnings": []
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/front.png",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (front.png)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/anim_front.png",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/back.png",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (back.png)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/back.png",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/icon.png",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (icon.png)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/icon.png",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/footprint.png",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (footprint.png)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/footprint.png",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/normal.pal",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (normal.pal)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/normal.pal",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    },
+    {
+      "target_file": "graphics/pokemon/guitestmon/shiny.pal",
+      "action": "copy_asset",
+      "reason": "Copiar asset requerido (shiny.pal)",
+      "new_text": "/home/nexxo/Documentos/Programacion/Proyectos/ASA/pokeemerald-expansion/graphics/pokemon/bulbasaur/shiny.pal",
+      "old_text": null,
+      "insert_after": null,
+      "insert_before": null,
+      "risk_level": "low",
+      "warnings": [
+        "Asset copiado sin conversion; la conversion la maneja el build del proyecto"
+      ]
+    }
+  ],
+  "warnings": [
+    "assets_folder no provisto; se intentara fallback de assets",
+    "Se usaron assets fallback de graphics/pokemon/bulbasaur para archivos faltantes"
+  ],
+  "errors": [],
+  "strategy_notes": [
+    "Constante nueva insertada justo antes de SPECIES_EGG y se actualiza SPECIES_EGG para apuntar a la nueva especie.",
+    "Bloque de especie se inserta al final de src/data/pokemon/species_info/gen_9_families.h antes del bloque __INTELLISENSE__.",
+    "Referencias graficas se insertan en src/data/graphics/pokemon.h antes de la declaracion de Egg."
+  ],
+  "is_blocked": false
+}

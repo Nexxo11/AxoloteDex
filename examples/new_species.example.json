@@ -1,0 +1,17 @@
+{
+  "mode": "add",
+  "constant_name": "SPECIES_TESTMON2",
+  "species_name": "Testmon2",
+  "folder_name": "testmon2",
+  "base_stats": {
+    "hp": 45,
+    "attack": 49,
+    "defense": 49,
+    "speed": 45,
+    "sp_attack": 65,
+    "sp_defense": 65
+  },
+  "types": ["TYPE_DARK", "TYPE_POISON"],
+  "abilities": ["ABILITY_OVERGROW", "ABILITY_NONE", "ABILITY_CHLOROPHYLL"],
+  "assets_folder": "./example_assets/testmon2"
+}

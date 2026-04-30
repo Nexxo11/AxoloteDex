@@ -1,0 +1,807 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import threading
+import time
+import traceback
+
+import dearpygui.dearpygui as dpg
+
+from build_check import BuildResult, parse_build_output, write_build_outputs
+from gui_components import TAGS
+from gui_state import GuiState, default_editor_data, save_config
+from species_editor import SpeciesEditor
+from species_linter import lint_species_definition, write_lint_report
+from sprite_loader import load_texture_data, resolve_preview_paths
+from validate_species import validate_species_definition
+
+
+class GuiActions:
+    def __init__(self, state: GuiState, config_path: Path) -> None:
+        self.state = state
+        self.editor: SpeciesEditor | None = None
+        self.config_path = config_path
+        self._texture_seq = 0
+        self._preview_texture_tags = {"front": "tex_front", "back": "tex_back", "icon": "tex_icon"}
+        self._preview_throttle_seconds = 0.15
+        self._last_preview_refresh = 0.0
+        self._preview_pending = False
+        self._build_thread: threading.Thread | None = None
+        self._build_result: BuildResult | None = None
+        self._build_output_buffer: list[str] = []
+
+    def _set_message(self, message: str) -> None:
+        dpg.set_value(TAGS["message_text"], message)
+
+    def _load_options_from_project(self) -> None:
+        if not self.state.project_loaded:
+            return
+        root = Path(self.state.project_path)
+        type_file = root / "include/constants/pokemon.h"
+        ability_file = root / "include/constants/abilities.h"
+        item_file = root / "include/constants/items.h"
+        moves_file = root / "include/constants/moves.h"
+        tmhm_file = root / "include/constants/tms_hms.h"
+
+        def _load_enum_tokens(path: Path, prefix: str) -> list[str]:
+            out: list[str] = []
+            seen: set[str] = set()
+            if not path.exists():
+                return out
+            for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                m = re.match(rf"\s*({prefix}[A-Z0-9_]+)\s*(?:=\s*[^,]+)?\s*,", line)
+                if m:
+                    token = m.group(1)
+                    if token not in seen:
+                        seen.add(token)
+                        out.append(token)
+                m2 = re.match(rf"\s*#define\s+({prefix}[A-Z0-9_]+)\b", line)
+                if m2:
+                    token = m2.group(1)
+                    if token not in seen:
+                        seen.add(token)
+                        out.append(token)
+            return out
+
+        types = _load_enum_tokens(type_file, "TYPE_")
+        abilities = _load_enum_tokens(ability_file, "ABILITY_")
+        items = _load_enum_tokens(item_file, "ITEM_")
+        moves = _load_enum_tokens(moves_file, "MOVE_")
+
+        tmhm_moves: list[str] = []
+        if tmhm_file.exists():
+            text = tmhm_file.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r"F\(([_A-Z0-9]+)\)", text):
+                tmhm_moves.append(f"MOVE_{m.group(1)}")
+
+        self.state.type_options = types if types else ["TYPE_NORMAL"]
+        self.state.ability_options = abilities if abilities else ["ABILITY_NONE"]
+        self.state.item_options = items if items else ["ITEM_NONE"]
+        self.state.move_options = moves if moves else ["MOVE_TACKLE"]
+        self.state.tmhm_options = sorted(set(tmhm_moves)) if tmhm_moves else ["MOVE_TACKLE"]
+
+        dpg.configure_item("type1", items=self.state.type_options)
+        dpg.configure_item("type2", items=[""] + self.state.type_options)
+        dpg.configure_item("ability1", items=self.state.ability_options)
+        dpg.configure_item("ability2", items=self.state.ability_options)
+        dpg.configure_item("ability_hidden", items=self.state.ability_options)
+        dpg.configure_item("evo_item_param", items=self.state.item_options)
+        dpg.configure_item("move_name", items=self.state.move_options)
+        dpg.configure_item("tmhm_move", items=self.state.tmhm_options)
+        if self.state.item_options:
+            dpg.set_value("evo_item_param", self.state.item_options[0])
+        if self.state.move_options:
+            dpg.set_value("move_name", self.state.move_options[0])
+        if self.state.tmhm_options:
+            dpg.set_value("tmhm_move", self.state.tmhm_options[0])
+
+    def _update_texture(self, slot: str, image_path: Path, frame_index: int, palette_mode: str) -> tuple[str, int, int]:
+        w, h, data = load_texture_data(image_path, kind=slot, scale=2, frame_index=frame_index, palette_mode=palette_mode)
+        self._texture_seq += 1
+        tag = f"tex_{slot}_{self._texture_seq}"
+        dpg.add_static_texture(w, h, data, tag=tag, parent="tex_registry")
+        return tag, w, h
+
+    def request_preview_refresh(self) -> None:
+        self._preview_pending = True
+
+    def pump(self) -> None:
+        if self.state.build_in_progress:
+            self.state.build_progress_value += 0.03
+            if self.state.build_progress_value > 0.95:
+                self.state.build_progress_value = 0.05
+            dpg.configure_item(TAGS["build_progress"], default_value=self.state.build_progress_value, overlay="Compilando...")
+            dpg.set_value(TAGS["build_output"], self.state.build_live_output)
+            if self._build_thread and not self._build_thread.is_alive() and self._build_result is not None:
+                self._finalize_build_result(self._build_result)
+
+        if not self._preview_pending:
+            return
+        now = time.monotonic()
+        if now - self._last_preview_refresh < self._preview_throttle_seconds:
+            return
+        self._preview_pending = False
+        self._last_preview_refresh = now
+        self._refresh_preview()
+
+    def _refresh_preview(self) -> None:
+        try:
+            if not self.state.project_loaded:
+                return
+            folder_name = str(dpg.get_value("folder_name") or "").strip() or "bulbasaur"
+            assets_folder = str(dpg.get_value("assets_folder") or "").strip()
+            frame_mode = dpg.get_value("preview_frame")
+            frame_index = 0 if frame_mode == "Frame 1" else 1
+            palette_mode = str(dpg.get_value("preview_palette") or "Normal").lower()
+
+            preview = resolve_preview_paths(Path(self.state.project_path), folder_name, assets_folder, palette_mode=palette_mode)
+            back_frame_index = frame_index if palette_mode == "normal" else frame_index
+            new_front, fw, fh = self._update_texture("front", preview.front_path, frame_index, palette_mode)
+            new_back, bw, bh = self._update_texture("back", preview.back_path, back_frame_index, palette_mode)
+            new_icon, iw, ih = self._update_texture("icon", preview.icon_path, frame_index, palette_mode)
+
+            dpg.configure_item(TAGS["preview_front_img"], texture_tag=new_front, width=fw, height=fh)
+            dpg.configure_item(TAGS["preview_back_img"], texture_tag=new_back, width=bw, height=bh)
+            dpg.configure_item(TAGS["preview_icon_img"], texture_tag=new_icon, width=iw, height=ih)
+
+            old_tags = self._preview_texture_tags.copy()
+            self._preview_texture_tags = {"front": new_front, "back": new_back, "icon": new_icon}
+            for old_tag in old_tags.values():
+                if old_tag in {"tex_front", "tex_back", "tex_icon"}:
+                    continue
+                try:
+                    if dpg.does_item_exist(old_tag):
+                        dpg.delete_item(old_tag)
+                except Exception:
+                    pass
+
+            pal_msg = f"Modo preview: {palette_mode}" if palette_mode in {"normal", "shiny"} else ""
+            warning = preview.warning or ""
+            dpg.set_value(TAGS["preview_warning"], (warning + " | " + pal_msg).strip(" |"))
+        except Exception as exc:
+            dpg.set_value(TAGS["preview_warning"], f"Preview error: {exc}")
+
+    def load_project(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            path = Path(dpg.get_value(TAGS["project_input"]).strip()).resolve()
+            self.editor = SpeciesEditor(path)
+            self.state.project_path = str(path)
+            self.state.project_loaded = True
+            self.state.species_list = [
+                {
+                    "constant_name": s.constant_name,
+                    "species_name": s.species_name or "",
+                    "folder_name": s.folder_name or "",
+                    "species": s,
+                }
+                for s in self.editor.read_result.species
+                if s.constant_name
+            ]
+            self.state.last_species_count = len(self.state.species_list)
+            dpg.set_value(TAGS["project_status"], f"Proyecto cargado: {path}")
+            dpg.set_value(TAGS["species_count"], f"Especies: {self.state.last_species_count}")
+            self._load_options_from_project()
+            self.filter_species()
+            dpg.configure_item(TAGS["delete_btn"], show=False)
+            save_config(self.config_path, {"last_project_path": str(path)})
+            self._set_message("Proyecto cargado correctamente")
+            self.request_preview_refresh()
+        except Exception:
+            self.state.project_loaded = False
+            self._set_message(traceback.format_exc())
+            dpg.set_value(TAGS["project_status"], "Error al cargar proyecto")
+
+    def analyze_project(self, sender=None, app_data=None, user_data=None) -> None:
+        self.load_project()
+
+    def filter_species(self, sender=None, app_data=None, user_data=None) -> None:
+        query = dpg.get_value(TAGS["search_input"]).strip().lower()
+        items: list[str] = []
+        for item in self.state.species_list:
+            key = f"{item['constant_name']} {item['species_name']}".lower()
+            if query and query not in key:
+                continue
+            items.append(f"{item['constant_name']} - {item['species_name']}")
+        dpg.configure_item(TAGS["species_list"], items=items)
+
+    def _parse_evo_rows(self, evolutions_raw: str | None) -> list[dict[str, str]]:
+        if not evolutions_raw:
+            return []
+        rows: list[dict[str, str]] = []
+        for m in re.finditer(r"\{\s*([^,}]+)\s*,\s*([^,}]+)\s*,\s*([^}]+)\}", evolutions_raw):
+            rows.append({"method": m.group(1).strip(), "param": m.group(2).strip(), "target": m.group(3).strip()})
+        return rows
+
+    def _render_evo_rows(self) -> None:
+        items = [f"{r['method']} | {r['param']} -> {r['target']}" for r in self.state.evolution_rows]
+        dpg.configure_item(TAGS["evo_rows"], items=items)
+        if self.state.selected_evolution_index >= len(self.state.evolution_rows):
+            self.state.selected_evolution_index = -1
+
+    def _render_levelup_rows(self) -> None:
+        items = [f"Lv {int(r['level']):>3} -> {r['move']}" for r in self.state.level_up_rows]
+        dpg.configure_item(TAGS["levelup_rows"], items=items)
+        if self.state.selected_level_up_index >= len(self.state.level_up_rows):
+            self.state.selected_level_up_index = -1
+
+    def _render_teachable_rows(self) -> None:
+        dpg.configure_item(TAGS["teachable_rows"], items=list(self.state.teachable_rows))
+        if self.state.selected_teachable_index >= len(self.state.teachable_rows):
+            self.state.selected_teachable_index = -1
+
+    def _sync_evolution_param_widget(self) -> None:
+        method = str(dpg.get_value("evo_method") or "EVO_LEVEL")
+        is_item = method == "EVO_ITEM"
+        dpg.configure_item("evo_param", show=not is_item)
+        dpg.configure_item("evo_item_param", show=is_item)
+        if is_item:
+            current = str(dpg.get_value("evo_param") or "").strip()
+            options = self.state.item_options or ["ITEM_NONE"]
+            if current in options:
+                dpg.set_value("evo_item_param", current)
+            else:
+                dpg.set_value("evo_item_param", options[0])
+                dpg.set_value("evo_param", options[0])
+
+    def on_evolution_method_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._sync_evolution_param_widget()
+        self.mark_dirty()
+
+    def on_evolution_item_change(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.set_value("evo_param", str(dpg.get_value("evo_item_param") or "ITEM_NONE"))
+        self.mark_dirty()
+
+    def select_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
+        selected = dpg.get_value(TAGS["evo_rows"])
+        if not selected:
+            self.state.selected_evolution_index = -1
+            return
+        for idx, row in enumerate(self.state.evolution_rows):
+            label = f"{row['method']} | {row['param']} -> {row['target']}"
+            if label == selected:
+                self.state.selected_evolution_index = idx
+                dpg.set_value("evo_method", row["method"])
+                dpg.set_value("evo_param", row["param"])
+                dpg.set_value("evo_target", row["target"])
+                self._sync_evolution_param_widget()
+                return
+        self.state.selected_evolution_index = -1
+
+    def select_levelup_row(self, sender=None, app_data=None, user_data=None) -> None:
+        selected = dpg.get_value(TAGS["levelup_rows"])
+        if not selected:
+            self.state.selected_level_up_index = -1
+            return
+        for idx, row in enumerate(self.state.level_up_rows):
+            label = f"Lv {int(row['level']):>3} -> {row['move']}"
+            if label == selected:
+                self.state.selected_level_up_index = idx
+                dpg.set_value("move_level", int(row["level"]))
+                dpg.set_value("move_name", str(row["move"]))
+                return
+        self.state.selected_level_up_index = -1
+
+    def select_teachable_row(self, sender=None, app_data=None, user_data=None) -> None:
+        selected = dpg.get_value(TAGS["teachable_rows"])
+        if not selected:
+            self.state.selected_teachable_index = -1
+            return
+        try:
+            self.state.selected_teachable_index = self.state.teachable_rows.index(selected)
+            dpg.set_value("tmhm_move", selected)
+        except ValueError:
+            self.state.selected_teachable_index = -1
+
+    def select_species(self, sender=None, app_data=None, user_data=None) -> None:
+        value = dpg.get_value(TAGS["species_list"])
+        if not value:
+            return
+        constant = value.split(" - ", 1)[0].strip()
+        selected = next((x for x in self.state.species_list if x["constant_name"] == constant), None)
+        if selected is None:
+            return
+
+        species = selected["species"]
+        self.state.selected_species_constant = constant
+        dpg.configure_item(TAGS["delete_btn"], show=True)
+        data = default_editor_data()
+        data["mode"] = "edit"
+        data["constant_name"] = species.constant_name or ""
+        data["species_name"] = species.species_name or ""
+        data["folder_name"] = species.folder_name or ""
+        stats = species.base_stats
+        data["hp"] = stats.hp or data["hp"]
+        data["attack"] = stats.attack or data["attack"]
+        data["defense"] = stats.defense or data["defense"]
+        data["speed"] = stats.speed or data["speed"]
+        data["sp_attack"] = stats.sp_attack or data["sp_attack"]
+        data["sp_defense"] = stats.sp_defense or data["sp_defense"]
+        if species.types:
+            data["type1"] = species.types[0]
+            data["type2"] = species.types[1] if len(species.types) > 1 else ""
+        if species.abilities:
+            data["ability1"] = species.abilities[0]
+            data["ability2"] = species.abilities[1] if len(species.abilities) > 1 else "ABILITY_NONE"
+            data["ability_hidden"] = species.abilities[2] if len(species.abilities) > 2 else "ABILITY_NONE"
+        for key, value in data.items():
+            tag = "edit_mode" if key == "mode" else key
+            if dpg.does_item_exist(tag):
+                dpg.set_value(tag, value)
+        self.state.evolution_rows = self._parse_evo_rows(species.evolutions_raw)
+        self._render_evo_rows()
+        self.state.level_up_rows = list(species.level_up_moves or [])
+        self.state.teachable_rows = [m for m in (species.teachable_moves_raw or []) if m in set(self.state.tmhm_options)]
+        self._render_levelup_rows()
+        self._render_teachable_rows()
+        self._sync_evolution_param_widget()
+        self.mark_dirty()
+
+    def _read_editor_from_ui(self) -> dict:
+        data = default_editor_data()
+        for key in list(data.keys()):
+            tag = "edit_mode" if key == "mode" else key
+            if dpg.does_item_exist(tag):
+                data[key] = dpg.get_value(tag)
+        return data
+
+    def mark_dirty(self, sender=None, app_data=None, user_data=None) -> None:
+        self.state.editor_data = self._read_editor_from_ui()
+        self.state.dry_run_valid = False
+        dpg.configure_item(TAGS["apply_btn"], enabled=False)
+        self.request_preview_refresh()
+
+    def new_species(self, sender=None, app_data=None, user_data=None) -> None:
+        data = default_editor_data()
+        data["mode"] = "add"
+        for key, value in data.items():
+            tag = "edit_mode" if key == "mode" else key
+            if dpg.does_item_exist(tag):
+                dpg.set_value(tag, value)
+        self.state.evolution_rows = []
+        self.state.level_up_rows = []
+        self.state.teachable_rows = []
+        self._render_evo_rows()
+        self._render_levelup_rows()
+        self._render_teachable_rows()
+        self._sync_evolution_param_widget()
+        dpg.configure_item(TAGS["delete_btn"], show=False)
+        self.mark_dirty()
+
+    def add_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:
+        level = int(dpg.get_value("move_level") or 1)
+        move = str(dpg.get_value("move_name") or "").strip()
+        if not move:
+            self._set_message("Selecciona un movimiento")
+            return
+        self.state.level_up_rows.append({"level": max(1, min(100, level)), "move": move})
+        self.state.selected_level_up_index = len(self.state.level_up_rows) - 1
+        self._render_levelup_rows()
+        self.mark_dirty()
+
+    def remove_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_level_up_index
+        if idx < 0 or idx >= len(self.state.level_up_rows):
+            self._set_message("Selecciona un movimiento por nivel para quitar")
+            return
+        del self.state.level_up_rows[idx]
+        self.state.selected_level_up_index = -1
+        self._render_levelup_rows()
+        self.mark_dirty()
+
+    def move_levelup_up(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_level_up_index
+        if idx <= 0 or idx >= len(self.state.level_up_rows):
+            return
+        self.state.level_up_rows[idx - 1], self.state.level_up_rows[idx] = self.state.level_up_rows[idx], self.state.level_up_rows[idx - 1]
+        self.state.selected_level_up_index = idx - 1
+        self._render_levelup_rows()
+        self.mark_dirty()
+
+    def move_levelup_down(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_level_up_index
+        if idx < 0 or idx >= len(self.state.level_up_rows) - 1:
+            return
+        self.state.level_up_rows[idx + 1], self.state.level_up_rows[idx] = self.state.level_up_rows[idx], self.state.level_up_rows[idx + 1]
+        self.state.selected_level_up_index = idx + 1
+        self._render_levelup_rows()
+        self.mark_dirty()
+
+    def add_teachable_move(self, sender=None, app_data=None, user_data=None) -> None:
+        move = str(dpg.get_value("tmhm_move") or "").strip()
+        if not move:
+            return
+        if move not in self.state.teachable_rows:
+            self.state.teachable_rows.append(move)
+            self._render_teachable_rows()
+            self.mark_dirty()
+
+    def remove_teachable_move(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_teachable_index
+        if idx < 0 or idx >= len(self.state.teachable_rows):
+            self._set_message("Selecciona un TM/HM para quitar")
+            return
+        del self.state.teachable_rows[idx]
+        self.state.selected_teachable_index = -1
+        self._render_teachable_rows()
+        self.mark_dirty()
+
+    def show_delete_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.selected_species_constant:
+            self._set_message("Selecciona una especie para eliminar")
+            return
+        dpg.configure_item(TAGS["delete_modal"], show=True)
+
+    def hide_delete_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.configure_item(TAGS["delete_modal"], show=False)
+
+    def confirm_delete_selected(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            self.hide_delete_modal()
+            if not self.editor:
+                raise ValueError("Proyecto no cargado")
+            if not self.state.selected_species_constant:
+                raise ValueError("No hay especie seleccionada")
+
+            selected = self.editor.species_by_constant.get(self.state.selected_species_constant)
+            if selected is None:
+                raise ValueError("No se pudo resolver la especie seleccionada")
+
+            payload = {
+                "mode": "delete",
+                "constant_name": selected.constant_name,
+                "species_name": selected.species_name or selected.constant_name,
+                "folder_name": selected.folder_name or "",
+                "assets_folder": "",
+                "base_stats": {
+                    "hp": 1,
+                    "attack": 1,
+                    "defense": 1,
+                    "speed": 1,
+                    "sp_attack": 1,
+                    "sp_defense": 1,
+                },
+                "types": ["TYPE_NORMAL"],
+                "abilities": ["ABILITY_NONE", "ABILITY_NONE", "ABILITY_NONE"],
+                "height": 1,
+                "weight": 1,
+                "gender_ratio": "PERCENT_FEMALE(50)",
+                "catch_rate": 1,
+                "exp_yield": 1,
+                "evolutions": [],
+            }
+
+            fallback_folder = self.editor.pick_fallback_folder()
+            validation = validate_species_definition(
+                payload,
+                Path.cwd() / "gui_payload.json",
+                Path(self.state.project_path),
+                fallback_folder,
+            )
+            payload, lint_ok = self._run_lint(payload, validation.used_fallback)
+            if not lint_ok:
+                raise ValueError("Lint con errores. No se puede eliminar.")
+
+            plan = self.editor.build_plan(payload, validation)
+            output_dir = Path.cwd() / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plan_md = plan.to_markdown()
+            plan_json = plan.to_dict()
+            (output_dir / "change_plan.md").write_text(plan_md, encoding="utf-8")
+            (output_dir / "change_plan.json").write_text(json.dumps(plan_json, indent=2, ensure_ascii=False), encoding="utf-8")
+            dpg.set_value(TAGS["plan_text"], plan_md)
+            if plan.is_blocked:
+                raise ValueError("Delete DRY-RUN inválido; revisa Change Plan")
+
+            result = self.editor.apply_plan(plan, validation)
+            self._set_message("\n".join(result.messages))
+            self.analyze_project()
+            self.new_species()
+            self.state.selected_species_constant = None
+            dpg.configure_item(TAGS["delete_btn"], show=False)
+        except Exception:
+            self._set_message(traceback.format_exc())
+
+    def auto_use_example(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.set_value("assets_folder", "")
+        self.mark_dirty()
+        self._set_message("Se usara fallback interno de assets durante validacion")
+
+    def add_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
+        method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
+        param = str(dpg.get_value("evo_item_param") if method == "EVO_ITEM" else dpg.get_value("evo_param") or "1").strip()
+        target = str(dpg.get_value("evo_target") or "").strip()
+        if not target:
+            self._set_message("Target species de evolución está vacío")
+            return
+        self.state.evolution_rows.append({"method": method, "param": param, "target": target})
+        self.state.selected_evolution_index = len(self.state.evolution_rows) - 1
+        self._render_evo_rows()
+        self.mark_dirty()
+
+    def update_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_evolution_index
+        if idx < 0 or idx >= len(self.state.evolution_rows):
+            self._set_message("Selecciona una evolución para actualizar")
+            return
+        method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
+        param = str(dpg.get_value("evo_item_param") if method == "EVO_ITEM" else dpg.get_value("evo_param") or "1").strip()
+        target = str(dpg.get_value("evo_target") or "").strip()
+        if not target:
+            self._set_message("Target species de evolución está vacío")
+            return
+        self.state.evolution_rows[idx] = {"method": method, "param": param, "target": target}
+        self._render_evo_rows()
+        self.mark_dirty()
+
+    def remove_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_evolution_index
+        if idx < 0 or idx >= len(self.state.evolution_rows):
+            self._set_message("Selecciona una evolución para eliminar")
+            return
+        del self.state.evolution_rows[idx]
+        self.state.selected_evolution_index = -1
+        self._render_evo_rows()
+        self.mark_dirty()
+
+    def clear_evolutions(self, sender=None, app_data=None, user_data=None) -> None:
+        self.state.evolution_rows = []
+        self.state.selected_evolution_index = -1
+        self._render_evo_rows()
+        self.mark_dirty()
+
+    def on_preview_mode_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self.request_preview_refresh()
+
+    def _editor_payload(self) -> dict:
+        e = self._read_editor_from_ui()
+        types = [e["type1"].strip()] if str(e["type1"]).strip() else []
+        if str(e["type2"]).strip():
+            types.append(e["type2"].strip())
+        abilities = [str(e["ability1"]).strip(), str(e["ability2"]).strip(), str(e["ability_hidden"]).strip()]
+        return {
+            "mode": e["mode"],
+            "constant_name": str(e["constant_name"]).strip(),
+            "species_name": str(e["species_name"]).strip(),
+            "folder_name": str(e["folder_name"]).strip(),
+            "assets_folder": str(e["assets_folder"]).strip(),
+            "base_stats": {
+                "hp": int(e["hp"]),
+                "attack": int(e["attack"]),
+                "defense": int(e["defense"]),
+                "speed": int(e["speed"]),
+                "sp_attack": int(e["sp_attack"]),
+                "sp_defense": int(e["sp_defense"]),
+            },
+            "types": types,
+            "abilities": abilities,
+            "height": int(e["height"]),
+            "weight": int(e["weight"]),
+            "gender_ratio": str(e["gender_ratio"]).strip(),
+            "catch_rate": int(e["catch_rate"]),
+            "exp_yield": int(e["exp_yield"]),
+            "evolutions": list(self.state.evolution_rows),
+            "level_up_learnset": list(self.state.level_up_rows),
+            "tmhm_learnset": list(self.state.teachable_rows),
+        }
+
+    def _run_lint(self, payload: dict, validation_used_fallback: bool):
+        if not self.editor:
+            return payload, False
+        lint = lint_species_definition(
+            data=payload,
+            project_root=Path(self.state.project_path),
+            existing_constants=set(self.editor.species_by_constant.keys()),
+            using_fallback_assets=validation_used_fallback,
+        )
+        write_lint_report(Path.cwd() / "output", lint)
+        self.state.last_errors = list(lint.errors)
+        self.state.last_warnings = list(lint.warnings)
+        if lint.ok:
+            dpg.set_value(TAGS["lint_status"], "✔ OK")
+            dpg.configure_item(TAGS["lint_status"], color=(80, 200, 120, 255))
+        else:
+            dpg.set_value(TAGS["lint_status"], "❌ errores")
+            dpg.configure_item(TAGS["lint_status"], color=(220, 70, 70, 255))
+        lines = []
+        if lint.errors:
+            lines.append("Errores:")
+            lines.extend(f"- {e}" for e in lint.errors)
+        if lint.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"- {w}" for w in lint.warnings)
+        if not lines:
+            lines.append("Sin issues")
+        dpg.set_value(TAGS["lint_output"], "\n".join(lines))
+        return lint.normalized_data, lint.ok
+
+    def validate_species(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            if not self.editor:
+                raise ValueError("Primero carga un proyecto")
+            payload = self._editor_payload()
+            fallback_folder = self.editor.pick_fallback_folder()
+            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
+            _, ok = self._run_lint(payload, validation.used_fallback)
+            if not ok:
+                self.state.dry_run_valid = False
+                dpg.configure_item(TAGS["apply_btn"], enabled=False)
+                self._set_message("Lint con errores. Corrige antes de aplicar.")
+            else:
+                self._set_message("Lint OK")
+        except Exception:
+            self._set_message(traceback.format_exc())
+
+    def generate_dry_run(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            if not self.editor:
+                raise ValueError("Primero carga un proyecto")
+            payload = self._editor_payload()
+            fallback_folder = self.editor.pick_fallback_folder()
+            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
+            payload, lint_ok = self._run_lint(payload, validation.used_fallback)
+            if not lint_ok:
+                self.state.dry_run_valid = False
+                dpg.configure_item(TAGS["apply_btn"], enabled=False)
+                self._set_message("Lint con errores. DRY-RUN bloqueado.")
+                return
+            plan = self.editor.build_plan(payload, validation)
+
+            output_dir = Path.cwd() / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plan_md = plan.to_markdown()
+            plan_json = plan.to_dict()
+            (output_dir / "change_plan.md").write_text(plan_md, encoding="utf-8")
+            (output_dir / "change_plan.json").write_text(json.dumps(plan_json, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            self.state.last_change_plan_md = plan_md
+            self.state.last_change_plan_json = plan_json
+            self.state.last_dry_run_signature = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+            self.state.dry_run_valid = not plan.is_blocked
+            dpg.set_value(TAGS["plan_text"], plan_md)
+            dpg.configure_item(TAGS["apply_btn"], enabled=self.state.dry_run_valid)
+            self._set_message(f"DRY-RUN generado. steps={len(plan.steps)}, warnings={len(plan.warnings)}, errors={len(plan.errors)}")
+        except Exception:
+            self.state.dry_run_valid = False
+            dpg.configure_item(TAGS["apply_btn"], enabled=False)
+            self._set_message(traceback.format_exc())
+
+    def show_confirm_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.dry_run_valid:
+            self._set_message("Debes generar un DRY-RUN valido antes de aplicar")
+            return
+        dpg.configure_item(TAGS["confirm_modal"], show=True)
+
+    def hide_confirm_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.configure_item(TAGS["confirm_modal"], show=False)
+
+    def confirm_apply(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            self.hide_confirm_modal()
+            if not self.editor:
+                raise ValueError("Proyecto no cargado")
+            payload = self._editor_payload()
+            current_sig = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+            if current_sig != self.state.last_dry_run_signature:
+                raise ValueError("Los datos cambiaron despues del ultimo DRY-RUN. Genera DRY-RUN otra vez.")
+            fallback_folder = self.editor.pick_fallback_folder()
+            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
+            payload, lint_ok = self._run_lint(payload, validation.used_fallback)
+            if not lint_ok:
+                raise ValueError("Lint con errores. No se puede aplicar.")
+            plan = self.editor.build_plan(payload, validation)
+            if plan.is_blocked:
+                raise ValueError("Plan bloqueado por errores. Revisa el panel Change Plan.")
+            result = self.editor.apply_plan(plan, validation)
+            self._set_message("\n".join(result.messages))
+            self.analyze_project()
+            self.generate_dry_run()
+            self.request_preview_refresh()
+        except Exception:
+            self._set_message(traceback.format_exc())
+
+    def show_build_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.project_loaded:
+            self._set_message("Carga un proyecto antes de compilar")
+            return
+        dpg.configure_item(TAGS["build_modal"], show=True)
+
+    def hide_build_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.configure_item(TAGS["build_modal"], show=False)
+
+    def run_build_check(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            self.hide_build_modal()
+            if not self.state.project_loaded:
+                raise ValueError("Proyecto no cargado")
+            if self.state.build_in_progress:
+                self._set_message("Ya hay una compilación en curso")
+                return
+            self.state.build_in_progress = True
+            self.state.build_progress_value = 0.05
+            self.state.build_live_output = "Iniciando compilación...\n"
+            self._build_output_buffer = ["Iniciando compilación..."]
+            dpg.configure_item(TAGS["build_progress"], default_value=0.05, overlay="Compilando...")
+            dpg.set_value(TAGS["build_status"], "⏳ Compilando proyecto...")
+            dpg.configure_item(TAGS["build_status"], color=(220, 190, 80, 255))
+            dpg.set_value(TAGS["build_output"], self.state.build_live_output)
+
+            project = Path(self.state.project_path)
+
+            def _worker() -> None:
+                jobs = max(1, os.cpu_count() or 1)
+                proc = subprocess.Popen(
+                    ["make", f"-j{jobs}"],
+                    cwd=project,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                lines: list[str] = []
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    clean = line.rstrip("\n")
+                    lines.append(clean)
+                    self._build_output_buffer = lines[-400:]
+                    self.state.build_live_output = "\n".join(self._build_output_buffer)
+                proc.wait()
+                full = "\n".join(lines)
+                errors, warnings = parse_build_output(full)
+                self._build_result = BuildResult(
+                    ok=proc.returncode == 0,
+                    returncode=proc.returncode or 0,
+                    stdout=full,
+                    stderr="",
+                    errors=errors,
+                    warnings=warnings,
+                )
+
+            self._build_result = None
+            self._build_thread = threading.Thread(target=_worker, daemon=True)
+            self._build_thread.start()
+            self._set_message("Compilación iniciada")
+        except Exception:
+            self._set_message(traceback.format_exc())
+
+    def _finalize_build_result(self, result: BuildResult) -> None:
+        output_dir = Path.cwd() / "output"
+        log_path, summary_path = write_build_outputs(output_dir, result)
+        self.state.build_in_progress = False
+        self.state.build_progress_value = 1.0
+        dpg.configure_item(TAGS["build_progress"], default_value=1.0, overlay="Finalizado")
+        self.state.last_build_status = "ok" if result.ok else "failed"
+        self.state.last_build_errors = [f"{e.file}:{e.line if e.line is not None else '?'} {e.message}" for e in result.errors]
+        self.state.last_build_warnings = result.warnings
+        self.state.last_build_log_path = str(log_path)
+        self.state.last_build_summary_md = summary_path.read_text(encoding="utf-8")
+        status_text = "✔ Compilación exitosa" if result.ok else "❌ Falló compilación"
+        dpg.set_value(TAGS["build_status"], status_text)
+        if result.ok:
+            dpg.configure_item(TAGS["build_status"], color=(80, 200, 120, 255))
+        else:
+            dpg.configure_item(TAGS["build_status"], color=(220, 70, 70, 255))
+        dpg.set_value(TAGS["build_output"], result.stdout[-20000:] if len(result.stdout) > 20000 else result.stdout)
+        self._set_message(f"Build finalizado. Ver {summary_path} y {log_path}")
+        self._build_thread = None
+        self._build_result = None
+
+    def open_build_summary(self, sender=None, app_data=None, user_data=None) -> None:
+        summary = Path.cwd() / "output" / "build_summary.md"
+        if not summary.exists():
+            self._set_message("No existe output/build_summary.md")
+            return
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", str(summary)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(summary)])
+            else:
+                os.startfile(str(summary))  # type: ignore[attr-defined]
+        except Exception:
+            self._set_message("No se pudo abrir build_summary.md automáticamente")
