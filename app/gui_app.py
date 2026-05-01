@@ -8,6 +8,7 @@ from gui.actions import GuiActions
 from gui.components import TAGS, build_layout
 from gui.state import GuiState, default_editor_data, load_config, save_config
 from gui.themes import (
+    create_disabled_button_theme,
     create_dark_theme,
     create_danger_button_theme,
     create_primary_button_theme,
@@ -38,8 +39,9 @@ def main() -> None:
     dpg.bind_theme(create_dark_theme())
     primary_btn = create_primary_button_theme()
     secondary_btn = create_secondary_button_theme()
+    disabled_btn = create_disabled_button_theme()
     danger_btn = create_danger_button_theme()
-    actions.set_button_themes(primary_btn, secondary_btn)
+    actions.set_button_themes(primary_btn, secondary_btn, disabled_btn)
 
     for tag in [
         TAGS["btn_load"],

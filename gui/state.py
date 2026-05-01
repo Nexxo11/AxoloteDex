@@ -11,6 +11,7 @@ class GuiState:
     project_loaded: bool = False
     species_list: list[dict[str, Any]] = field(default_factory=list)
     selected_species_constant: str | None = None
+    editor_dirty: bool = False
     editor_data: dict[str, Any] = field(default_factory=dict)
     last_change_plan_md: str = ""
     last_change_plan_json: dict[str, Any] | None = None
@@ -48,6 +49,7 @@ def default_editor_data() -> dict[str, Any]:
         "mode": "add",
         "constant_name": "",
         "species_name": "",
+        "description": "",
         "folder_name": "",
         "assets_folder": "",
         "hp": 45,

@@ -130,10 +130,6 @@ def lint_species_definition(
             if not m.startswith("MOVE_"):
                 result.errors.append(f"tmhm_learnset move invalido en indice {i}: {m}")
 
-    evolutions = data.get("evolutions")
-    if not isinstance(evolutions, list) or len(evolutions) == 0:
-        result.warnings.append("sin evoluciones")
-
     if using_fallback_assets:
         result.warnings.append("usando fallback (Bulbasaur)")
 

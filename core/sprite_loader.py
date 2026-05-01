@@ -41,6 +41,12 @@ def _resolve_species_folder(project_root: Path, folder_name: str) -> Path:
         if len(parts) >= 2:
             candidates.append(base / parts[0] / "_".join(parts[1:]))
         candidates.append(base / raw.replace("_", "/"))
+        for i in range(len(parts) - 1, 0, -1):
+            prefix = base / "/".join(parts[:i])
+            candidates.append(prefix)
+        for i in range(len(parts) - 1, 0, -1):
+            prefix = base / parts[0] / "_".join(parts[1:i + 1])
+            candidates.append(prefix)
 
     for candidate in candidates:
         if candidate.exists() and candidate.is_dir():

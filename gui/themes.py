@@ -4,21 +4,21 @@ import dearpygui.dearpygui as dpg
 
 
 PALETTE = {
-    "background": (17, 17, 22, 255),
-    "panel": (26, 26, 34, 255),
-    "panel_alt": (36, 36, 49, 255),
-    "input": (25, 25, 32, 255),
-    "input_hover": (36, 36, 49, 255),
-    "border": (75, 63, 114, 255),
-    "primary": (142, 107, 232, 255),
-    "primary_hover": (157, 123, 255, 255),
-    "danger": (207, 51, 75, 255),
-    "danger_hover": (227, 67, 92, 255),
-    "text": (232, 230, 240, 255),
-    "muted_text": (168, 163, 184, 255),
-    "success": (88, 214, 141, 255),
-    "warning": (245, 197, 66, 255),
-    "error": (255, 92, 108, 255),
+    "background": (12, 13, 20, 255),
+    "panel": (17, 18, 28, 255),
+    "panel_alt": (52, 54, 69, 255),
+    "input": (24, 26, 38, 255),
+    "input_hover": (34, 36, 50, 255),
+    "border": (73, 62, 116, 255),
+    "primary": (136, 109, 219, 255),
+    "primary_hover": (151, 124, 236, 255),
+    "danger": (202, 52, 78, 255),
+    "danger_hover": (220, 67, 94, 255),
+    "text": (232, 233, 244, 255),
+    "muted_text": (154, 159, 183, 255),
+    "success": (94, 204, 154, 255),
+    "warning": (237, 199, 88, 255),
+    "error": (244, 103, 121, 255),
 }
 
 
@@ -82,6 +82,10 @@ def create_primary_button_theme() -> int:
 
 def create_secondary_button_theme() -> int:
     return _button_theme(PALETTE["panel_alt"], PALETTE["input_hover"])
+
+
+def create_disabled_button_theme() -> int:
+    return _button_theme((70, 70, 84, 255), (70, 70, 84, 255))
 
 
 def create_danger_button_theme() -> int:

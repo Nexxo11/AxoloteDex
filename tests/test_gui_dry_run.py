@@ -19,6 +19,8 @@ PROJECT = ROOT / "pokeemerald-expansion"
 class GuiDryRunTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        if not PROJECT.exists():
+            raise unittest.SkipTest(f"Fixture project missing: {PROJECT}")
         cls.state = GuiState()
         cls.state.editor_data = default_editor_data()
         cls.actions = GuiActions(cls.state, ROOT / "config.json")

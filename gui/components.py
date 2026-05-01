@@ -107,6 +107,7 @@ def build_layout(actions) -> None:
 def _build_header(actions) -> None:
     with dpg.child_window(tag=TAGS["header_panel"], width=-1, height=112, border=False, no_scrollbar=True):
         dpg.add_text("AxoloteDex")
+        dpg.add_text("by Nexxo", color=(168, 163, 184, 255))
         with dpg.group(horizontal=True):
             dpg.add_input_text(tag=TAGS["project_input"], width=780, hint="Ruta a pokeemerald-expansion")
             dpg.add_button(label="Select Path", tag=TAGS["btn_project_select"], callback=actions.open_project_path_dialog, width=118)
@@ -149,6 +150,7 @@ def _build_editor_tab(actions) -> None:
                 dpg.add_separator()
                 dpg.add_input_text(label="Constant", tag="constant_name", callback=actions.mark_dirty, width=340)
                 dpg.add_input_text(label="Nombre visible", tag="species_name", callback=actions.mark_dirty, width=340)
+                dpg.add_input_text(label="Descripción", tag="description", multiline=True, height=72, callback=actions.mark_dirty, width=420)
                 dpg.add_input_text(label="Folder", tag="folder_name", callback=actions.mark_dirty, width=340)
                 dpg.add_input_int(label="Height", tag="height", callback=actions.mark_dirty, width=120)
                 dpg.add_input_int(label="Weight", tag="weight", callback=actions.mark_dirty, width=120)
@@ -247,7 +249,7 @@ def _build_build_tab(actions) -> None:
     dpg.add_input_text(tag=TAGS["build_output"], multiline=True, readonly=True, width=-1, height=560)
     dpg.add_text("Listo", tag=TAGS["message_text"], color=(180, 190, 210, 255))
     with dpg.group(horizontal=True):
-        dpg.add_text("AxoloteDex v0.6.0", tag=TAGS["version_text"], color=(168, 163, 184, 255))
+        dpg.add_text("AxoloteDex v0.6.0 by Nexxo", tag=TAGS["version_text"], color=(168, 163, 184, 255))
         dpg.add_spacer(width=18)
         dpg.add_text("Proyecto: idle", tag=TAGS["status_project"])
         dpg.add_spacer(width=12)

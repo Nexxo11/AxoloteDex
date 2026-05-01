@@ -48,24 +48,28 @@ class GuiActions:
         self._status_build = "idle"
         self._primary_button_theme: int | None = None
         self._secondary_button_theme: int | None = None
+        self._disabled_button_theme: int | None = None
         self._last_layout_size: tuple[int, int] = (-1, -1)
+        self._suspend_dirty_events: bool = False
 
-    def set_button_themes(self, primary_theme: int, secondary_theme: int) -> None:
+    def set_button_themes(self, primary_theme: int, secondary_theme: int, disabled_theme: int | None = None) -> None:
         self._primary_button_theme = primary_theme
         self._secondary_button_theme = secondary_theme
-        self._update_action_button_progress()
+        self._disabled_button_theme = disabled_theme if disabled_theme is not None else secondary_theme
+        self._refresh_apply_enabled()
 
     def _update_action_button_progress(self) -> None:
-        if self._primary_button_theme is None or self._secondary_button_theme is None:
+        if self._primary_button_theme is None or self._secondary_button_theme is None or self._disabled_button_theme is None:
             return
-        validate_done = bool(self.state.validation_ok)
-        dryrun_done = bool(self.state.dry_run_valid)
         if dpg.does_item_exist(TAGS["validate_btn"]):
-            dpg.bind_item_theme(TAGS["validate_btn"], self._primary_button_theme)
+            btn_enabled = bool(dpg.is_item_enabled(TAGS["validate_btn"]))
+            dpg.bind_item_theme(TAGS["validate_btn"], self._primary_button_theme if btn_enabled else self._disabled_button_theme)
         if dpg.does_item_exist(TAGS["dryrun_btn"]):
-            dpg.bind_item_theme(TAGS["dryrun_btn"], self._primary_button_theme if validate_done else self._secondary_button_theme)
+            btn_enabled = bool(dpg.is_item_enabled(TAGS["dryrun_btn"]))
+            dpg.bind_item_theme(TAGS["dryrun_btn"], self._primary_button_theme if btn_enabled else self._disabled_button_theme)
         if dpg.does_item_exist(TAGS["apply_btn"]):
-            dpg.bind_item_theme(TAGS["apply_btn"], self._primary_button_theme if dryrun_done else self._secondary_button_theme)
+            btn_enabled = bool(dpg.is_item_enabled(TAGS["apply_btn"]))
+            dpg.bind_item_theme(TAGS["apply_btn"], self._primary_button_theme if btn_enabled else self._disabled_button_theme)
 
     def _set_message(self, message: str) -> None:
         msg = message.strip().splitlines()[-1] if message else ""
@@ -106,11 +110,18 @@ class GuiActions:
             dpg.configure_item(TAGS["compat_status"], color=compat_color)
 
     def _refresh_apply_enabled(self) -> None:
-        enabled = bool(self.state.dry_run_valid)
-        dpg.configure_item(TAGS["apply_btn"], enabled=enabled)
+        validate_enabled = bool(self.state.project_loaded and self.state.editor_dirty)
+        dryrun_enabled = bool(validate_enabled and self.state.validation_ok)
+        apply_enabled = bool(self.state.dry_run_valid)
+        if dpg.does_item_exist(TAGS["validate_btn"]):
+            dpg.configure_item(TAGS["validate_btn"], enabled=validate_enabled)
+        if dpg.does_item_exist(TAGS["dryrun_btn"]):
+            dpg.configure_item(TAGS["dryrun_btn"], enabled=dryrun_enabled)
+        if dpg.does_item_exist(TAGS["apply_btn"]):
+            dpg.configure_item(TAGS["apply_btn"], enabled=apply_enabled)
         self._update_action_button_progress()
         if dpg.does_item_exist(TAGS["apply_hint"]):
-            if enabled:
+            if apply_enabled:
                 dpg.set_value(TAGS["apply_hint"], "Flujo completo: listo para aplicar cambios")
                 dpg.configure_item(TAGS["apply_hint"], color=PALETTE["success"])
             else:
@@ -270,6 +281,7 @@ class GuiActions:
         editor_field_w = max(300, workspace_w - 340)
         dpg.configure_item("constant_name", width=editor_field_w)
         dpg.configure_item("species_name", width=editor_field_w)
+        dpg.configure_item("description", width=max(360, workspace_w - 220))
         dpg.configure_item("folder_name", width=editor_field_w)
         dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
         dpg.configure_item("evo_target", width=max(320, workspace_w - 190))
@@ -395,6 +407,9 @@ class GuiActions:
             if dpg.does_item_exist("evo_target"):
                 dpg.configure_item("evo_target", items=evo_targets)
             self.filter_species()
+            self.state.editor_dirty = False
+            self.state.validation_ok = False
+            self.state.dry_run_valid = False
             dpg.configure_item(TAGS["delete_btn"], show=False)
             if self.state.selected_species_constant:
                 selected_item = next((x for x in self.state.species_list if x["constant_name"] == self.state.selected_species_constant), None)
@@ -408,14 +423,19 @@ class GuiActions:
             dpg.configure_item(TAGS["compile_btn"], enabled=True)
             self._status_validation = "idle"
             self._status_dryrun = "idle"
+            self._refresh_apply_enabled()
             self._update_header_status()
             self._set_message("Proyecto cargado correctamente")
             self.request_preview_refresh()
         except Exception:
             self.state.project_loaded = False
+            self.state.editor_dirty = False
+            self.state.validation_ok = False
+            self.state.dry_run_valid = False
             self._set_message(traceback.format_exc())
             dpg.set_value(TAGS["project_status"], "Error al cargar proyecto")
             dpg.configure_item(TAGS["compile_btn"], enabled=False)
+            self._refresh_apply_enabled()
             self._update_header_status()
 
     def analyze_project(self, sender=None, app_data=None, user_data=None) -> None:
@@ -590,10 +610,14 @@ class GuiActions:
             data["constant_name"] = constant
             data["species_name"] = str(selected.get("species_name") or "Nueva especie")
             data["folder_name"] = str(selected.get("folder_name") or "new_species")
-            for key, value in data.items():
-                tag = "edit_mode" if key == "mode" else key
-                if dpg.does_item_exist(tag):
-                    dpg.set_value(tag, value)
+            self._suspend_dirty_events = True
+            try:
+                for key, value in data.items():
+                    tag = "edit_mode" if key == "mode" else key
+                    if dpg.does_item_exist(tag):
+                        dpg.set_value(tag, value)
+            finally:
+                self._suspend_dirty_events = False
             self.state.evolution_rows = []
             self.state.level_up_rows = []
             self.state.teachable_rows = []
@@ -601,7 +625,14 @@ class GuiActions:
             self._render_levelup_rows()
             self._render_teachable_rows()
             self._sync_evolution_param_widget()
-            self.mark_dirty()
+            self.state.editor_data = self._read_editor_from_ui()
+            self.state.editor_dirty = False
+            self.state.validation_ok = False
+            self.state.dry_run_valid = False
+            self._status_validation = "idle"
+            self._status_dryrun = "idle"
+            self._refresh_apply_enabled()
+            self.request_preview_refresh()
             return
 
         self.state.selected_species_constant = constant
@@ -626,10 +657,14 @@ class GuiActions:
             data["ability1"] = species.abilities[0]
             data["ability2"] = species.abilities[1] if len(species.abilities) > 1 else "ABILITY_NONE"
             data["ability_hidden"] = species.abilities[2] if len(species.abilities) > 2 else "ABILITY_NONE"
-        for key, value in data.items():
-            tag = "edit_mode" if key == "mode" else key
-            if dpg.does_item_exist(tag):
-                dpg.set_value(tag, value)
+        self._suspend_dirty_events = True
+        try:
+            for key, value in data.items():
+                tag = "edit_mode" if key == "mode" else key
+                if dpg.does_item_exist(tag):
+                    dpg.set_value(tag, value)
+        finally:
+            self._suspend_dirty_events = False
         self.state.evolution_rows = self._parse_evo_rows(species.evolutions_raw)
         self._render_evo_rows()
         self.state.level_up_rows = list(species.level_up_moves or [])
@@ -637,7 +672,14 @@ class GuiActions:
         self._render_levelup_rows()
         self._render_teachable_rows()
         self._sync_evolution_param_widget()
-        self.mark_dirty()
+        self.state.editor_data = self._read_editor_from_ui()
+        self.state.editor_dirty = False
+        self.state.validation_ok = False
+        self.state.dry_run_valid = False
+        self._status_validation = "idle"
+        self._status_dryrun = "idle"
+        self._refresh_apply_enabled()
+        self.request_preview_refresh()
 
     def _read_editor_from_ui(self) -> dict:
         data = default_editor_data()
@@ -648,8 +690,13 @@ class GuiActions:
         return data
 
     def mark_dirty(self, sender=None, app_data=None, user_data=None) -> None:
+        if self._suspend_dirty_events:
+            return
         self.state.editor_data = self._read_editor_from_ui()
+        self.state.editor_dirty = True
+        self.state.validation_ok = False
         self.state.dry_run_valid = False
+        self._status_validation = "idle"
         self._status_dryrun = "dirty"
         if dpg.does_item_exist(TAGS["plan_empty"]):
             dpg.configure_item(TAGS["plan_empty"], show=True)
@@ -933,6 +980,7 @@ class GuiActions:
             "mode": e["mode"],
             "constant_name": str(e["constant_name"]).strip(),
             "species_name": str(e["species_name"]).strip(),
+            "description": str(e.get("description") or "").strip(),
             "folder_name": str(e["folder_name"]).strip(),
             "assets_folder": str(e["assets_folder"]).strip(),
             "base_stats": {

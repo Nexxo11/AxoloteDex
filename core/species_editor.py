@@ -582,6 +582,16 @@ class SpeciesEditor:
         friendship = data.get("friendship", 70)
         body_color = data.get("body_color", "BODY_COLOR_GREEN")
         no_flip = "TRUE" if data.get("no_flip") else "FALSE"
+        raw_description = str(data.get("description") or "").strip()
+        if not raw_description:
+            raw_description = "A custom species added by tool.\nReplace this description later."
+        description_lines = [line.replace("\\", "\\\\").replace('"', '\\"') for line in raw_description.splitlines() if line.strip()]
+        if not description_lines:
+            description_lines = ["A custom species added by tool.", "Replace this description later."]
+        description_expr = "\n".join(
+            f'            "{line}{"\\n" if i < len(description_lines) - 1 else ""}"'
+            for i, line in enumerate(description_lines)
+        )
         internal = self._pascal_from_constant(const)
         evolutions_field = ""
         evolutions = data.get("evolutions", [])
@@ -621,8 +631,7 @@ class SpeciesEditor:
             f"        .height = {height},\n"
             f"        .weight = {weight},\n"
             "        .description = COMPOUND_STRING(\n"
-            "            \"A custom species added by tool.\\n\"\n"
-            "            \"Replace this description later.\"),\n"
+            f"{description_expr}),\n"
             "        .pokemonScale = 256,\n"
             "        .pokemonOffset = 0,\n"
             "        .trainerScale = 256,\n"
