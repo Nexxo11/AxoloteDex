@@ -168,18 +168,23 @@ def _build_editor_tab(actions) -> None:
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 1", tag="ability1", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 2", tag="ability2", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Hidden", tag="ability_hidden", callback=actions.mark_dirty, width=280)
-        with dpg.tab(label="Learnsets"):
+        with dpg.tab(label="Evoluciones"):
                 with dpg.group(horizontal=True):
                     dpg.add_combo(["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"], label="Método", tag="evo_method", width=170, callback=actions.on_evolution_method_change)
-                    dpg.add_input_text(label="Param", tag="evo_param", width=100)
-                    dpg.add_combo(["ITEM_NONE"], label="Item", tag="evo_item_param", width=220, show=False, callback=actions.on_evolution_item_change)
-                dpg.add_input_text(label="Target species", tag="evo_target", width=310)
+                    dpg.add_input_int(label="Nivel", tag="evo_level_param", width=100, min_value=1, max_value=100, min_clamped=True, max_clamped=True, default_value=16, show=True, callback=actions.mark_dirty)
+                    dpg.add_input_int(label="Felicidad", tag="evo_friendship_param", width=120, min_value=1, max_value=255, min_clamped=True, max_clamped=True, default_value=220, show=False, callback=actions.mark_dirty)
+                    dpg.add_combo(["ITEM_NONE"], label="Item", tag="evo_item_param", width=260, show=False, callback=actions.on_evolution_item_change)
+                    dpg.add_combo(["ITEM_NONE"], label="Item trade", tag="evo_trade_item_param", width=260, show=False, callback=actions.on_evolution_trade_item_change)
+                    dpg.add_input_text(label="Param", tag="evo_param", width=120, show=False)
+                dpg.add_combo([], label="Target species", tag="evo_target", width=420, callback=actions.mark_dirty)
                 with dpg.group(horizontal=True):
                     dpg.add_button(label="Agregar", callback=actions.add_evolution_row)
                     dpg.add_button(label="Actualizar", callback=actions.update_evolution_row)
                     dpg.add_button(label="Eliminar", callback=actions.remove_evolution_row)
                 dpg.add_button(label="Limpiar", callback=actions.clear_evolutions)
                 dpg.add_listbox([], tag=TAGS["evo_rows"], width=580, num_items=8, callback=actions.select_evolution_row)
+
+        with dpg.tab(label="Learnsets"):
                 dpg.add_text("Movimientos por nivel")
                 with dpg.group(horizontal=True):
                     dpg.add_input_int(label="Nivel", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
@@ -217,18 +222,15 @@ def _build_inline_preview_block(actions) -> None:
     with dpg.group(horizontal=True):
         dpg.add_text("Frame")
         dpg.add_radio_button(["Frame 1", "Frame 2"], tag="preview_frame", default_value="Frame 1", callback=actions.on_preview_mode_change)
-        dpg.add_spacer(width=24)
-        dpg.add_text("Palette")
-        dpg.add_radio_button(["Normal", "Shiny"], tag="preview_palette", default_value="Normal", callback=actions.on_preview_mode_change)
     dpg.add_text("", tag=TAGS["preview_warning"], wrap=900)
     with dpg.child_window(width=-1, height=220, border=False, no_scrollbar=True):
         with dpg.group(horizontal=True):
-            dpg.add_spacer(width=40)
-            dpg.add_image("tex_front", width=144, height=144, tag=TAGS["preview_front_img"])
-            dpg.add_spacer(width=28)
-            dpg.add_image("tex_back", width=144, height=144, tag=TAGS["preview_back_img"])
-            dpg.add_spacer(width=28)
-            dpg.add_image("tex_icon", width=144, height=144, tag=TAGS["preview_icon_img"])
+            dpg.add_spacer(width=60)
+            dpg.add_image("tex_front", width=148, height=148, tag=TAGS["preview_front_img"])
+            dpg.add_spacer(width=34)
+            dpg.add_image("tex_back", width=148, height=148, tag=TAGS["preview_back_img"])
+            dpg.add_spacer(width=34)
+            dpg.add_image("tex_icon", width=148, height=148, tag=TAGS["preview_icon_img"])
 
 
 def _build_plan_tab(actions) -> None:

@@ -13,6 +13,7 @@ class SpritePreview:
     back_path: Path
     icon_path: Path
     used_fallback: bool
+    palette_variant: str = ""
     warning: str | None = None
 
 
@@ -27,13 +28,55 @@ def _choose_first(folder: Path, names: list[str]) -> Path | None:
     return None
 
 
+def _resolve_species_folder(project_root: Path, folder_name: str) -> Path:
+    base = project_root / "graphics" / "pokemon"
+    raw = str(folder_name or "").strip().strip("/")
+    direct = base / raw
+    if direct.exists() and direct.is_dir():
+        return direct
+
+    candidates: list[Path] = []
+    if "_" in raw:
+        parts = raw.split("_")
+        if len(parts) >= 2:
+            candidates.append(base / parts[0] / "_".join(parts[1:]))
+        candidates.append(base / raw.replace("_", "/"))
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return direct
+
+
+def _extract_palette_variant(folder_name: str, resolved_folder: Path, project_root: Path) -> str:
+    raw = str(folder_name or "").strip().lower()
+    if not raw:
+        return ""
+    base = resolved_folder.name.lower()
+    try:
+        rel = resolved_folder.relative_to(project_root / "graphics" / "pokemon")
+        rel_key = "_".join(part.lower() for part in rel.parts)
+    except Exception:
+        rel_key = base
+    if raw == base:
+        return ""
+    if raw == rel_key:
+        return ""
+    if raw.startswith(rel_key + "_"):
+        tail = raw[len(rel_key) + 1 :]
+        return f"{base}_{tail}" if tail else ""
+    if raw.startswith(base + "_"):
+        return raw[len(base) + 1 :]
+    return ""
+
+
 def resolve_preview_paths(
     project_root: Path,
     folder_name: str,
     assets_folder: str | None = None,
     palette_mode: str = "normal",
 ) -> SpritePreview:
-    main_folder = project_root / "graphics" / "pokemon" / folder_name
+    main_folder = _resolve_species_folder(project_root, folder_name)
     source_folder = main_folder
     used_fallback = False
 
@@ -45,17 +88,30 @@ def resolve_preview_paths(
             source_folder = custom
 
     shiny = str(palette_mode).lower() == "shiny"
+    palette_variant = _extract_palette_variant(folder_name, main_folder, project_root)
     front_names = ["front.png", "anim_front.png"]
     back_names = ["back.png"]
     icon_names = ["icon.png"]
-    if shiny:
-        front_names = ["shiny_front.png", "front_shiny.png", "shiny_anim_front.png", "anim_front_shiny.png"] + front_names
-        back_names = ["shiny_back.png", "back_shiny.png"] + back_names
-        icon_names = ["shiny_icon.png", "icon_shiny.png"] + icon_names
 
-    front = _choose_first(source_folder, front_names)
-    back = _choose_first(source_folder, back_names)
-    icon = _choose_first(source_folder, icon_names)
+    search_folders = [source_folder]
+    pokemon_root = project_root / "graphics" / "pokemon"
+    parent = source_folder.parent
+    while parent != parent.parent and parent != pokemon_root.parent:
+        if parent == pokemon_root:
+            break
+        search_folders.append(parent)
+        parent = parent.parent
+
+    def _pick_with_parent_fallback(names: list[str]) -> Path | None:
+        for folder in search_folders:
+            hit = _choose_first(folder, names)
+            if hit is not None:
+                return hit
+        return None
+
+    front = _pick_with_parent_fallback(front_names)
+    back = _pick_with_parent_fallback(back_names)
+    icon = _pick_with_parent_fallback(icon_names)
 
     fallback = project_root / "graphics" / "pokemon" / "bulbasaur"
     if front is None:
@@ -71,8 +127,10 @@ def resolve_preview_paths(
     warning_parts: list[str] = []
     if used_fallback:
         warning_parts.append("Usando gráficos de ejemplo (Bulbasaur)")
-    if shiny and not any(name in front.name for name in ["shiny_front", "front_shiny", "shiny_anim_front", "anim_front_shiny"]):
-        warning_parts.append("Shiny preview: no hay PNG shiny dedicado; se muestra sprite base")
+    if shiny:
+        warning_parts.append("Shiny preview: se aplica shiny.pal sobre sprite base")
+    if palette_variant:
+        warning_parts.append(f"Variante detectada: {palette_variant}")
     warning = " | ".join(warning_parts) if warning_parts else None
     if front is None or back is None or icon is None:
         raise FileNotFoundError("No se pudieron resolver sprites ni fallback bulbasaur")
@@ -82,6 +140,7 @@ def resolve_preview_paths(
         back_path=back,
         icon_path=icon,
         used_fallback=used_fallback,
+        palette_variant=palette_variant,
         warning=warning,
     )
 
@@ -103,15 +162,207 @@ def _crop_frame(img: Image.Image, kind: str, frame_index: int) -> Image.Image:
     return img
 
 
+def _parse_jasc_pal(text: str) -> list[tuple[int, int, int]]:
+    lines = [ln.strip() for ln in text.replace("\r", "").split("\n") if ln.strip()]
+    if len(lines) < 4 or lines[0] != "JASC-PAL":
+        return []
+    out: list[tuple[int, int, int]] = []
+    for line in lines[3:]:
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        try:
+            r, g, b = (max(0, min(255, int(parts[0]))), max(0, min(255, int(parts[1]))), max(0, min(255, int(parts[2]))))
+            out.append((r, g, b))
+        except ValueError:
+            continue
+    return out
+
+
+def _parse_gba_pal_bytes(data: bytes) -> list[tuple[int, int, int]]:
+    out: list[tuple[int, int, int]] = []
+    if len(data) < 2:
+        return out
+    for i in range(0, len(data) - 1, 2):
+        v = data[i] | (data[i + 1] << 8)
+        b5 = (v >> 10) & 0x1F
+        g5 = (v >> 5) & 0x1F
+        r5 = v & 0x1F
+        out.append((r5 * 255 // 31, g5 * 255 // 31, b5 * 255 // 31))
+    return out
+
+
+def _read_palette_file(path: Path) -> list[tuple[int, int, int]]:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+    try:
+        text = data.decode("utf-8", errors="ignore")
+        if "JASC-PAL" in text:
+            parsed = _parse_jasc_pal(text)
+            if parsed:
+                return parsed
+    except Exception:
+        pass
+    return _parse_gba_pal_bytes(data)
+
+
+def _load_palette(folder: Path, mode: str) -> tuple[list[tuple[int, int, int]], str]:
+    mode = mode.lower()
+    candidates = [
+        f"{mode}.pal",
+        f"{mode}.gbapal",
+        f"{mode}_gba.pal",
+        f"{mode}_gba.gbapal",
+    ]
+    search_folders = [folder]
+    if folder.parent.name and folder.parent.name != "pokemon":
+        search_folders.append(folder.parent)
+
+    for current_folder in search_folders:
+        for name in candidates:
+            p = current_folder / name
+            if not p.exists():
+                continue
+            pal = _read_palette_file(p)
+            if pal:
+                return pal, f"{p}:{p.stat().st_mtime}"
+    return [], ""
+
+
+def _load_palette_with_variant(folder: Path, mode: str, variant: str) -> tuple[list[tuple[int, int, int]], str]:
+    mode = mode.lower()
+    variant = str(variant or "").strip().lower()
+
+    specific_candidates: list[str] = []
+    if variant:
+        specific_candidates.extend([
+            f"{variant}.pal",
+            f"{variant}.gbapal",
+            f"{variant}_gba.pal",
+            f"{variant}_gba.gbapal",
+        ])
+        head = variant.split("_", 1)[0]
+        if mode == "shiny" and head:
+            specific_candidates.extend([
+                f"{head}_shiny.pal",
+                f"{head}_shiny.gbapal",
+            ])
+
+    search_folders = [folder]
+    if folder.parent.name and folder.parent.name != "pokemon":
+        search_folders.append(folder.parent)
+
+    for current_folder in search_folders:
+        for name in specific_candidates:
+            p = current_folder / name
+            if not p.exists():
+                continue
+            pal = _read_palette_file(p)
+            if pal:
+                return pal, f"{p}:{p.stat().st_mtime}"
+
+    return _load_palette(folder, mode)
+
+
+def _nearest_index(color: tuple[int, int, int], palette: list[tuple[int, int, int]]) -> int:
+    best = 0
+    best_dist = 1 << 30
+    r, g, b = color
+    for i, (pr, pg, pb) in enumerate(palette):
+        d = (r - pr) * (r - pr) + (g - pg) * (g - pg) + (b - pb) * (b - pb)
+        if d < best_dist:
+            best = i
+            best_dist = d
+    return best
+
+
+def _apply_palette_transform_back_indexed(
+    rgba: Image.Image,
+    source_palette: list[tuple[int, int, int]],
+    target_palette: list[tuple[int, int, int]],
+) -> Image.Image:
+    pal_img = Image.new("P", (1, 1))
+    flat: list[int] = []
+    for r, g, b in source_palette[:256]:
+        flat.extend([r, g, b])
+    if len(flat) < 768:
+        flat.extend([0] * (768 - len(flat)))
+    pal_img.putpalette(flat[:768])
+
+    rgb = rgba.convert("RGB")
+    q = rgb.quantize(palette=pal_img, dither=Image.Dither.NONE)
+    idx_px = q.load()
+    out = rgba.copy()
+    out_px = out.load()
+    w, h = out.size
+    tlen = len(target_palette)
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = out_px[x, y]
+            if a == 0:
+                continue
+            idx = int(idx_px[x, y])
+            if idx >= tlen:
+                idx = tlen - 1
+            nr, ng, nb = target_palette[idx]
+            out_px[x, y] = (nr, ng, nb, a)
+    return out
+
+
+def _apply_palette_transform(
+    rgba: Image.Image,
+    sprite_folder: Path,
+    palette_mode: str,
+    kind: str,
+    palette_variant: str,
+) -> Image.Image:
+    mode = palette_mode.lower()
+    if mode in {"raw", "none", "off"}:
+        return rgba
+    target_palette, _ = _load_palette_with_variant(sprite_folder, mode, palette_variant)
+    if not target_palette:
+        return rgba
+    source_palette, _ = _load_palette_with_variant(sprite_folder, "normal", palette_variant)
+    if not source_palette:
+        source_palette = target_palette
+
+    if kind == "back":
+        return _apply_palette_transform_back_indexed(rgba, source_palette, target_palette)
+
+    if mode == "normal":
+        return rgba
+
+    px = rgba.load()
+    w, h = rgba.size
+    tlen = len(target_palette)
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                continue
+            idx = _nearest_index((r, g, b), source_palette)
+            if idx >= tlen:
+                idx = tlen - 1
+            nr, ng, nb = target_palette[idx]
+            px[x, y] = (nr, ng, nb, a)
+    return rgba
+
+
 def load_texture_data(
     path: Path,
     kind: str = "generic",
     scale: int = 2,
     frame_index: int = 0,
     palette_mode: str = "normal",
+    palette_variant: str = "",
 ) -> tuple[int, int, list[float]]:
     mtime = path.stat().st_mtime
-    key = (f"{path.resolve()}::{kind}::{scale}::{frame_index}::{palette_mode}", mtime)
+    normal_pal, normal_stamp = _load_palette_with_variant(path.parent, "normal", palette_variant)
+    shiny_pal, shiny_stamp = _load_palette_with_variant(path.parent, "shiny", palette_variant)
+    pal_stamp = f"{len(normal_pal)}:{normal_stamp}|{len(shiny_pal)}:{shiny_stamp}"
+    key = (f"{path.resolve()}::{kind}::{scale}::{frame_index}::{palette_mode}::{pal_stamp}", mtime)
     if key in _CACHE:
         return _CACHE[key]
 
@@ -120,6 +371,7 @@ def load_texture_data(
         if scale > 1:
             framed = framed.resize((framed.width * scale, framed.height * scale), Image.NEAREST)
         rgba = framed.convert("RGBA")
+        rgba = _apply_palette_transform(rgba, path.parent, palette_mode, kind, palette_variant)
         w, h = rgba.size
         data = []
         for r, g, b, a in rgba.getdata():

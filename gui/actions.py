@@ -33,6 +33,9 @@ class GuiActions:
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
+        self._icon_anim_interval = 0.33
+        self._icon_anim_last = 0.0
+        self._icon_anim_frame = 0
         self._build_thread: threading.Thread | None = None
         self._build_result: BuildResult | None = None
         self._build_output_buffer: list[str] = []
@@ -167,6 +170,7 @@ class GuiActions:
         dpg.configure_item("ability2", items=self.state.ability_options)
         dpg.configure_item("ability_hidden", items=self.state.ability_options)
         dpg.configure_item("evo_item_param", items=self.state.item_options)
+        dpg.configure_item("evo_trade_item_param", items=["ITEM_NONE"] + self.state.item_options)
         dpg.configure_item("move_name", items=self.state.move_options)
         dpg.configure_item("tmhm_move", items=self.state.tmhm_options)
         if self.state.item_options:
@@ -176,8 +180,22 @@ class GuiActions:
         if self.state.tmhm_options:
             dpg.set_value("tmhm_move", self.state.tmhm_options[0])
 
-    def _update_texture(self, slot: str, image_path: Path, frame_index: int, palette_mode: str) -> tuple[str, int, int]:
-        w, h, data = load_texture_data(image_path, kind=slot, scale=2, frame_index=frame_index, palette_mode=palette_mode)
+    def _update_texture(
+        self,
+        slot: str,
+        image_path: Path,
+        frame_index: int,
+        palette_mode: str,
+        palette_variant: str,
+    ) -> tuple[str, int, int]:
+        w, h, data = load_texture_data(
+            image_path,
+            kind=slot,
+            scale=2,
+            frame_index=frame_index,
+            palette_mode=palette_mode,
+            palette_variant=palette_variant,
+        )
         self._texture_seq += 1
         tag = f"tex_{slot}_{self._texture_seq}"
         dpg.add_static_texture(w, h, data, tag=tag, parent="tex_registry")
@@ -188,6 +206,13 @@ class GuiActions:
 
     def pump(self) -> None:
         self._apply_responsive_layout()
+        now = time.monotonic()
+
+        if self.state.project_loaded and now - self._icon_anim_last >= self._icon_anim_interval:
+            self._icon_anim_last = now
+            self._icon_anim_frame = 1 - self._icon_anim_frame
+            self.request_preview_refresh()
+
         if self.state.build_in_progress:
             self.state.build_progress_value += 0.03
             if self.state.build_progress_value > 0.95:
@@ -202,7 +227,6 @@ class GuiActions:
 
         if not self._preview_pending:
             return
-        now = time.monotonic()
         if now - self._last_preview_refresh < self._preview_throttle_seconds:
             return
         self._preview_pending = False
@@ -248,6 +272,10 @@ class GuiActions:
         dpg.configure_item("species_name", width=editor_field_w)
         dpg.configure_item("folder_name", width=editor_field_w)
         dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
+        dpg.configure_item("evo_target", width=max(320, workspace_w - 190))
+        dpg.configure_item("evo_friendship_param", width=120)
+        dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
+        dpg.configure_item("evo_trade_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item(TAGS["evo_rows"], width=workspace_w - 30)
         dpg.configure_item(TAGS["levelup_rows"], width=workspace_w - 30)
         dpg.configure_item(TAGS["teachable_rows"], width=workspace_w - 30)
@@ -294,20 +322,29 @@ class GuiActions:
             assets_folder = str(dpg.get_value("assets_folder") or "").strip()
             frame_mode = dpg.get_value("preview_frame")
             frame_index = 0 if frame_mode == "Frame 1" else 1
-            palette_mode = str(dpg.get_value("preview_palette") or "Normal").lower()
+            icon_frame_index = self._icon_anim_frame
+            palette_mode = "raw"
 
             preview = resolve_preview_paths(Path(self.state.project_path), folder_name, assets_folder, palette_mode=palette_mode)
             back_frame_index = frame_index if palette_mode == "normal" else frame_index
-            new_front, fw, fh = self._update_texture("front", preview.front_path, frame_index, palette_mode)
-            new_back, bw, bh = self._update_texture("back", preview.back_path, back_frame_index, palette_mode)
-            new_icon, iw, ih = self._update_texture("icon", preview.icon_path, frame_index, palette_mode)
+            new_front, fw, fh = self._update_texture("front", preview.front_path, frame_index, palette_mode, preview.palette_variant)
+            new_back, bw, bh = self._update_texture("back", preview.back_path, back_frame_index, palette_mode, preview.palette_variant)
+            icon_payload: tuple[str, int, int] | None = None
+            if dpg.does_item_exist(TAGS["preview_icon_img"]):
+                icon_payload = self._update_texture("icon", preview.icon_path, icon_frame_index, palette_mode, preview.palette_variant)
 
             dpg.configure_item(TAGS["preview_front_img"], texture_tag=new_front, width=fw, height=fh)
             dpg.configure_item(TAGS["preview_back_img"], texture_tag=new_back, width=bw, height=bh)
-            dpg.configure_item(TAGS["preview_icon_img"], texture_tag=new_icon, width=iw, height=ih)
+            if icon_payload is not None:
+                new_icon, iw, ih = icon_payload
+                dpg.configure_item(TAGS["preview_icon_img"], texture_tag=new_icon, width=iw, height=ih)
 
             old_tags = self._preview_texture_tags.copy()
-            self._preview_texture_tags = {"front": new_front, "back": new_back, "icon": new_icon}
+            self._preview_texture_tags = {
+                "front": new_front,
+                "back": new_back,
+                "icon": icon_payload[0] if icon_payload is not None else self._preview_texture_tags.get("icon", "tex_icon"),
+            }
             for old_tag in old_tags.values():
                 if old_tag in {"tex_front", "tex_back", "tex_icon"}:
                     continue
@@ -348,6 +385,15 @@ class GuiActions:
             dpg.set_value(TAGS["project_status"], f"Proyecto cargado: {path}")
             dpg.set_value(TAGS["species_count"], f"Especies: {self.state.last_species_count}")
             self._load_options_from_project()
+            evo_targets = sorted(
+                {
+                    str(item.get("constant_name") or "").strip()
+                    for item in self.state.species_list
+                    if str(item.get("constant_name") or "").strip()
+                }
+            )
+            if dpg.does_item_exist("evo_target"):
+                dpg.configure_item("evo_target", items=evo_targets)
             self.filter_species()
             dpg.configure_item(TAGS["delete_btn"], show=False)
             if self.state.selected_species_constant:
@@ -412,17 +458,33 @@ class GuiActions:
 
     def _sync_evolution_param_widget(self) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL")
+        is_level = method == "EVO_LEVEL"
         is_item = method == "EVO_ITEM"
-        dpg.configure_item("evo_param", show=not is_item)
+        is_trade = method == "EVO_TRADE"
+        is_friendship = method == "EVO_FRIENDSHIP"
+
+        dpg.configure_item("evo_level_param", show=is_level)
+        dpg.configure_item("evo_friendship_param", show=is_friendship)
         dpg.configure_item("evo_item_param", show=is_item)
+        dpg.configure_item("evo_trade_item_param", show=is_trade)
+        dpg.configure_item("evo_param", show=False)
+
+        options = self.state.item_options or ["ITEM_NONE"]
+        current = str(dpg.get_value("evo_param") or "").strip()
         if is_item:
-            current = str(dpg.get_value("evo_param") or "").strip()
-            options = self.state.item_options or ["ITEM_NONE"]
-            if current in options:
-                dpg.set_value("evo_item_param", current)
-            else:
-                dpg.set_value("evo_item_param", options[0])
-                dpg.set_value("evo_param", options[0])
+            dpg.set_value("evo_item_param", current if current in options else options[0])
+        elif is_trade:
+            dpg.set_value("evo_trade_item_param", current if current in options else "ITEM_NONE")
+        elif is_level:
+            try:
+                dpg.set_value("evo_level_param", max(1, min(100, int(current or "16"))))
+            except ValueError:
+                dpg.set_value("evo_level_param", 16)
+        elif is_friendship:
+            try:
+                dpg.set_value("evo_friendship_param", max(1, min(255, int(current or "220"))))
+            except ValueError:
+                dpg.set_value("evo_friendship_param", 220)
 
     def on_evolution_method_change(self, sender=None, app_data=None, user_data=None) -> None:
         self._sync_evolution_param_widget()
@@ -431,6 +493,39 @@ class GuiActions:
     def on_evolution_item_change(self, sender=None, app_data=None, user_data=None) -> None:
         dpg.set_value("evo_param", str(dpg.get_value("evo_item_param") or "ITEM_NONE"))
         self.mark_dirty()
+
+    def on_evolution_trade_item_change(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.set_value("evo_param", str(dpg.get_value("evo_trade_item_param") or "ITEM_NONE"))
+        self.mark_dirty()
+
+    def _evolution_param_from_ui(self) -> str:
+        method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
+        if method == "EVO_LEVEL":
+            return str(max(1, min(100, int(dpg.get_value("evo_level_param") or 16))))
+        if method == "EVO_ITEM":
+            return str(dpg.get_value("evo_item_param") or "ITEM_NONE").strip() or "ITEM_NONE"
+        if method == "EVO_TRADE":
+            return str(dpg.get_value("evo_trade_item_param") or "ITEM_NONE").strip() or "ITEM_NONE"
+        if method == "EVO_FRIENDSHIP":
+            return str(max(1, min(255, int(dpg.get_value("evo_friendship_param") or 220))))
+        return str(dpg.get_value("evo_param") or "1").strip() or "1"
+
+    def _set_evolution_param_ui(self, method: str, param: str) -> None:
+        dpg.set_value("evo_param", param)
+        if method == "EVO_LEVEL":
+            try:
+                dpg.set_value("evo_level_param", max(1, min(100, int(param or "16"))))
+            except ValueError:
+                dpg.set_value("evo_level_param", 16)
+        elif method == "EVO_ITEM":
+            dpg.set_value("evo_item_param", param or "ITEM_NONE")
+        elif method == "EVO_TRADE":
+            dpg.set_value("evo_trade_item_param", param or "ITEM_NONE")
+        elif method == "EVO_FRIENDSHIP":
+            try:
+                dpg.set_value("evo_friendship_param", max(1, min(255, int(param or "220"))))
+            except ValueError:
+                dpg.set_value("evo_friendship_param", 220)
 
     def select_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         selected = dpg.get_value(TAGS["evo_rows"])
@@ -442,7 +537,7 @@ class GuiActions:
             if label == selected:
                 self.state.selected_evolution_index = idx
                 dpg.set_value("evo_method", row["method"])
-                dpg.set_value("evo_param", row["param"])
+                self._set_evolution_param_ui(row["method"], row["param"])
                 dpg.set_value("evo_target", row["target"])
                 self._sync_evolution_param_widget()
                 return
@@ -582,6 +677,8 @@ class GuiActions:
         self._render_levelup_rows()
         self._render_teachable_rows()
         self._sync_evolution_param_widget()
+        if dpg.does_item_exist("evo_target"):
+            dpg.set_value("evo_target", "")
         dpg.configure_item(TAGS["delete_btn"], show=False)
         self._ensure_draft_species_in_list(data["constant_name"], data["species_name"], data["folder_name"])
         self.filter_species()
@@ -782,7 +879,7 @@ class GuiActions:
 
     def add_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
-        param = str(dpg.get_value("evo_item_param") if method == "EVO_ITEM" else dpg.get_value("evo_param") or "1").strip()
+        param = self._evolution_param_from_ui()
         target = str(dpg.get_value("evo_target") or "").strip()
         if not target:
             self._set_message("Target species de evolución está vacío")
@@ -798,7 +895,7 @@ class GuiActions:
             self._set_message("Selecciona una evolución para actualizar")
             return
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
-        param = str(dpg.get_value("evo_item_param") if method == "EVO_ITEM" else dpg.get_value("evo_param") or "1").strip()
+        param = self._evolution_param_from_ui()
         target = str(dpg.get_value("evo_target") or "").strip()
         if not target:
             self._set_message("Target species de evolución está vacío")
