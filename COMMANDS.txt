@@ -1,0 +1,140 @@
+AxoloteDex - Command Reference
+
+Notes:
+- Run commands from this folder: /home/nexxo/Documentos/Programacion/Proyectos/ASA
+- Use .venv Python when possible.
+- You can use either the new module-style commands or legacy wrappers.
+
+============================================================
+GUI
+============================================================
+
+1) Start GUI (recommended, module style)
+   .venv/bin/python -m app.gui_app
+   What it does:
+   - Opens the AxoloteDex GUI.
+   - Lets you load a pokeemerald-expansion folder, validate species,
+     generate dry-run plans, apply changes, and run build checks.
+
+2) Start GUI (legacy wrapper)
+   .venv/bin/python gui_app.py
+   What it does:
+   - Same behavior as command #1, kept for compatibility.
+
+============================================================
+CLI - SPECIES WORKFLOW
+============================================================
+
+3) Apply species JSON workflow (recommended, module style)
+   .venv/bin/python -m cli.apply_species_change <project_path> <species_json_path>
+   What it does:
+   - Loads the project and species JSON.
+   - Validates data and assets.
+   - Produces dry-run output files in output/.
+   - Does NOT write project changes unless --apply is added.
+
+4) Apply species JSON workflow with real write
+   .venv/bin/python -m cli.apply_species_change <project_path> <species_json_path> --apply
+   What it does:
+   - Executes the generated plan and writes files.
+   - Creates backups in backups/<timestamp>/.
+
+5) Apply + build check
+   .venv/bin/python -m cli.apply_species_change <project_path> <species_json_path> --apply --build-check
+   What it does:
+   - Applies the plan.
+   - Runs project build and writes build logs/summaries in output/.
+
+6) Legacy wrapper for apply workflow
+   .venv/bin/python apply_species_change.py <project_path> <species_json_path> [--apply] [--build-check]
+   What it does:
+   - Same as #3/#4/#5, wrapper kept for compatibility.
+
+============================================================
+CLI - EXPORT / ANALYSIS / ROLLBACK
+============================================================
+
+7) Export species index/data (recommended)
+   .venv/bin/python -m cli.export_species <project_path>
+   What it does:
+   - Reads species data and exports JSON artifacts into output/.
+
+8) Export species (legacy wrapper)
+   .venv/bin/python export_species.py <project_path>
+   What it does:
+   - Same as #7.
+
+9) Analyze expansion structure (recommended)
+   .venv/bin/python -m cli.analyze_expansion <project_path>
+   What it does:
+   - Scans and reports key files/structure used by the toolchain.
+
+10) Analyze expansion (legacy wrapper)
+    .venv/bin/python analyze_expansion.py <project_path>
+    What it does:
+    - Same as #9.
+
+11) Rollback from latest backup (dry-run)
+    .venv/bin/python -m cli.rollback_backup <project_path> --latest
+    What it does:
+    - Shows what would be restored from the latest backup.
+    - Does not modify files.
+
+12) Rollback from latest backup (apply)
+    .venv/bin/python -m cli.rollback_backup <project_path> --latest --apply
+    What it does:
+    - Restores files from latest backup.
+
+13) Rollback and remove a directory too (apply)
+    .venv/bin/python -m cli.rollback_backup <project_path> --latest --remove-path graphics/pokemon/<folder> --apply
+    What it does:
+    - Restores backup state and removes an extra path if requested.
+
+14) Rollback (legacy wrapper)
+    .venv/bin/python rollback_backup.py <project_path> --latest [--apply]
+    What it does:
+    - Same as #11/#12 with wrapper compatibility.
+
+============================================================
+TESTS / QUALITY
+============================================================
+
+15) Run GUI dry-run tests
+    .venv/bin/python -m unittest -v tests/test_gui_dry_run.py
+    What it does:
+    - Runs GUI workflow regression tests (load project, validate, dry-run behavior).
+
+16) Run species editor safety tests
+    .venv/bin/python -m unittest -v tests/test_species_editor_safety.py
+    What it does:
+    - Verifies editor safety rules (insert boundaries, preprocessor balance,
+      residual detection, evolution update behavior).
+
+17) Run all tests in tests/
+    .venv/bin/python -m unittest discover -s tests -v
+    What it does:
+    - Runs the whole test suite under tests/.
+
+18) Syntax check key modules
+    .venv/bin/python -m py_compile app/gui_app.py gui/actions.py gui/components.py gui/state.py core/species_editor.py
+    What it does:
+    - Quick syntax validation without executing full workflows.
+
+============================================================
+POKEEMERALD BUILD COMMANDS (inside project repo)
+============================================================
+
+19) Clean build artifacts
+    make clean
+    What it does:
+    - Removes compiled objects and generated assets.
+
+20) Build using all CPU cores
+    make -j$(nproc)
+    What it does:
+    - Compiles the full pokeemerald-expansion project in parallel.
+
+21) Build with fixed parallelism (example)
+    make -j12
+    What it does:
+    - Compiles using exactly 12 parallel jobs.

@@ -377,8 +377,8 @@ tools/scaninc/scaninc -M build/emerald/src/AgbRfu_LinkManager.d -I include -I to
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_ai_main.o src/battle_ai_main.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_ai_switch.o src/battle_ai_switch.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_ai_util.o src/battle_ai_util.c
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim_bug.o src/battle_anim_bug.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim.o src/battle_anim.c
+/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim_bug.o src/battle_anim_bug.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim_dark.o src/battle_anim_dark.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim_dragon.o src/battle_anim_dragon.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/battle_anim_effects_1.o src/battle_anim_effects_1.c
@@ -571,8 +571,8 @@ tools/scaninc/scaninc -M build/emerald/src/AgbRfu_LinkManager.d -I include -I to
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/librfu_intr.o src/librfu_intr.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/librfu_rfu.o src/librfu_rfu.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/librfu_sio32id.o src/librfu_sio32id.c
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/librfu_stwi.o src/librfu_stwi.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/lilycove_lady.o src/lilycove_lady.c
+/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/librfu_stwi.o src/librfu_stwi.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/line_break.o src/line_break.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/link.o src/link.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/link_rfu_2.o src/link_rfu_2.c
@@ -738,7 +738,7 @@ tools/preproc/preproc -s data/mystery_gift.s charmap.txt | arm-none-eabi-cpp -iq
 Memory region         Used Size  Region Size  %age Used
            EWRAM:      227692 B       256 KB     86.86%
            IWRAM:       28496 B        32 KB     86.96%
-             ROM:    26347360 B        32 MB     78.52%
+             ROM:    26341472 B        32 MB     78.50%
 cd build/emerald && arm-none-eabi-ld -Map ../../pokeemerald.map --print-memory-usage --gc-sections -T ../../ld_script_modern.ld -o ../../pokeemerald.elf <objs> <libs> | cat
 tools/gbafix/gbafix pokeemerald.elf -t"POKEMON EMER" -cBPEE -m01 -r0 --silent
 arm-none-eabi-objcopy -O binary pokeemerald.elf pokeemerald.gba
