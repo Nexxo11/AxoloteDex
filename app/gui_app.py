@@ -64,7 +64,7 @@ def main() -> None:
         dpg.set_value(TAGS["project_input"], state.project_path)
 
     viewport_w = int(cfg.get("window_width", 1560)) if isinstance(cfg.get("window_width"), int) else 1560
-    viewport_h = int(cfg.get("window_height", 940)) if isinstance(cfg.get("window_height"), int) else 940
+    viewport_h = int(cfg.get("window_height", 880)) if isinstance(cfg.get("window_height"), int) else 880
     dpg.create_viewport(title="AxoloteDex", width=viewport_w, height=viewport_h)
     dpg.setup_dearpygui()
     dpg.show_viewport()

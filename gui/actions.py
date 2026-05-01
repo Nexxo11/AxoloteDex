@@ -24,6 +24,9 @@ from gui.themes import PALETTE
 
 
 class GuiActions:
+    MAX_SPECIES_NAME_LEN = 12
+    MAX_DESCRIPTION_LEN = 180
+
     def __init__(self, state: GuiState, config_path: Path) -> None:
         self.state = state
         self.editor: SpeciesEditor | None = None
@@ -51,6 +54,11 @@ class GuiActions:
         self._disabled_button_theme: int | None = None
         self._last_layout_size: tuple[int, int] = (-1, -1)
         self._suspend_dirty_events: bool = False
+        self._cached_payload_sig: str = ""
+        self._cached_payload_after_lint: dict | None = None
+        self._cached_validation = None
+        self._cached_lint_ok: bool | None = None
+        self._perf_stats: dict[str, list[float]] = {}
 
     def set_button_themes(self, primary_theme: int, secondary_theme: int, disabled_theme: int | None = None) -> None:
         self._primary_button_theme = primary_theme
@@ -81,8 +89,49 @@ class GuiActions:
             color = PALETTE["success"]
         elif "warn" in low or "fallback" in low:
             color = PALETTE["warning"]
-        dpg.set_value(TAGS["message_text"], msg or "Listo")
+        dpg.set_value(TAGS["message_text"], msg or "Ready")
         dpg.configure_item(TAGS["message_text"], color=color)
+
+    def _record_perf(self, name: str, elapsed_ms: float) -> None:
+        bucket = self._perf_stats.setdefault(name, [])
+        bucket.append(elapsed_ms)
+        if len(bucket) > 40:
+            del bucket[:-40]
+
+    @staticmethod
+    def _payload_signature(payload: dict) -> str:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def _invalidate_payload_cache(self) -> None:
+        self._cached_payload_sig = ""
+        self._cached_payload_after_lint = None
+        self._cached_validation = None
+        self._cached_lint_ok = None
+
+    def _prepare_payload_validation_lint(self) -> tuple[dict, object, bool, str]:
+        if not self.editor:
+            raise ValueError("Load a project first")
+        payload = self._editor_payload()
+        sig = self._payload_signature(payload)
+        if (
+            sig == self._cached_payload_sig
+            and self._cached_payload_after_lint is not None
+            and self._cached_validation is not None
+            and self._cached_lint_ok is not None
+        ):
+            return self._cached_payload_after_lint, self._cached_validation, self._cached_lint_ok, sig
+
+        t0 = time.perf_counter()
+        fallback_folder = self.editor.pick_fallback_folder()
+        validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
+        payload_after_lint, lint_ok = self._run_lint(payload, validation.used_fallback)
+        self._record_perf("validate+lint", (time.perf_counter() - t0) * 1000.0)
+
+        self._cached_payload_sig = sig
+        self._cached_payload_after_lint = payload_after_lint
+        self._cached_validation = validation
+        self._cached_lint_ok = lint_ok
+        return payload_after_lint, validation, lint_ok, sig
 
     def _compat_text_and_color(self) -> tuple[str, tuple[int, int, int, int]]:
         if not self.state.project_loaded:
@@ -90,7 +139,7 @@ class GuiActions:
         if self._status_build == "error" or self._status_validation == "error" or self._status_dryrun == "error":
             return "no compatible", PALETTE["error"]
         if self._status_build == "running" or self._status_dryrun == "dirty":
-            return "parcial", PALETTE["warning"]
+            return "partial", PALETTE["warning"]
         return "compatible", PALETTE["success"]
 
     def _persist_config(self, updates: dict) -> None:
@@ -99,14 +148,14 @@ class GuiActions:
         save_config(self.config_path, cfg)
 
     def _update_header_status(self) -> None:
-        project = "cargado" if self.state.project_loaded else "idle"
-        dpg.set_value(TAGS["status_project"], f"Proyecto: {project}")
-        dpg.set_value(TAGS["status_validation"], f"Validación: {self._status_validation}")
+        project = "loaded" if self.state.project_loaded else "idle"
+        dpg.set_value(TAGS["status_project"], f"Project: {project}")
+        dpg.set_value(TAGS["status_validation"], f"Validation: {self._status_validation}")
         dpg.set_value(TAGS["status_dryrun"], f"Dry-run: {self._status_dryrun}")
         dpg.set_value(TAGS["status_build"], f"Build: {self._status_build}")
         compat_text, compat_color = self._compat_text_and_color()
         if dpg.does_item_exist(TAGS["compat_status"]):
-            dpg.set_value(TAGS["compat_status"], f"Compatibilidad: {compat_text}")
+            dpg.set_value(TAGS["compat_status"], f"Compatibility: {compat_text}")
             dpg.configure_item(TAGS["compat_status"], color=compat_color)
 
     def _refresh_apply_enabled(self) -> None:
@@ -122,10 +171,10 @@ class GuiActions:
         self._update_action_button_progress()
         if dpg.does_item_exist(TAGS["apply_hint"]):
             if apply_enabled:
-                dpg.set_value(TAGS["apply_hint"], "Flujo completo: listo para aplicar cambios")
+                dpg.set_value(TAGS["apply_hint"], "Full flow complete: ready to apply changes")
                 dpg.configure_item(TAGS["apply_hint"], color=PALETTE["success"])
             else:
-                dpg.set_value(TAGS["apply_hint"], "Flujo: Validar -> Generar Dry-run -> Aplicar cambios")
+                dpg.set_value(TAGS["apply_hint"], "Flow: Validate -> Generate dry-run -> Apply changes")
                 dpg.configure_item(TAGS["apply_hint"], color=PALETTE["warning"])
 
     def _load_options_from_project(self) -> None:
@@ -228,7 +277,7 @@ class GuiActions:
             self.state.build_progress_value += 0.03
             if self.state.build_progress_value > 0.95:
                 self.state.build_progress_value = 0.05
-            dpg.configure_item(TAGS["build_progress"], default_value=self.state.build_progress_value, overlay="Compilando...")
+            dpg.configure_item(TAGS["build_progress"], default_value=self.state.build_progress_value, overlay="Building...")
             dpg.set_value(TAGS["build_output"], self.state.build_live_output)
             if self._build_thread and not self._build_thread.is_alive() and self._build_result is not None:
                 self._finalize_build_result(self._build_result)
@@ -262,7 +311,7 @@ class GuiActions:
             left_ratio = 0.22
             header_h = 100
 
-        row_h = max(420, viewport_h - header_h - 22)
+        row_h = max(400, viewport_h - header_h - 50)
 
         left_w = max(300, int(viewport_w * left_ratio))
         workspace_w = max(720, viewport_w - left_w - 30)
@@ -278,12 +327,25 @@ class GuiActions:
         dpg.configure_item(TAGS["btn_new"], width=left_w - 22)
         dpg.configure_item(TAGS["delete_btn"], width=left_w - 22)
 
-        editor_field_w = max(300, workspace_w - 340)
+        editor_field_w = min(520, max(300, workspace_w - 420))
         dpg.configure_item("constant_name", width=editor_field_w)
         dpg.configure_item("species_name", width=editor_field_w)
-        dpg.configure_item("description", width=max(360, workspace_w - 220))
+        dpg.configure_item("description", width=min(560, max(360, workspace_w - 320)))
         dpg.configure_item("folder_name", width=editor_field_w)
         dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
+        general_left_w = max(420, int(workspace_w * 0.65))
+        general_right_w = max(280, workspace_w - general_left_w - 36)
+        if dpg.does_item_exist(TAGS["general_left"]):
+            dpg.configure_item(TAGS["general_left"], width=general_left_w)
+        if dpg.does_item_exist(TAGS["general_right"]):
+            dpg.configure_item(TAGS["general_right"], width=general_right_w)
+        preview_size = max(72, min(112, int((general_right_w - 44) / 3)))
+        if dpg.does_item_exist(TAGS["preview_front_img"]):
+            dpg.configure_item(TAGS["preview_front_img"], width=preview_size, height=preview_size)
+        if dpg.does_item_exist(TAGS["preview_back_img"]):
+            dpg.configure_item(TAGS["preview_back_img"], width=preview_size, height=preview_size)
+        if dpg.does_item_exist(TAGS["preview_icon_img"]):
+            dpg.configure_item(TAGS["preview_icon_img"], width=preview_size, height=preview_size)
         dpg.configure_item("evo_target", width=max(320, workspace_w - 190))
         dpg.configure_item("evo_friendship_param", width=120)
         dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
@@ -294,7 +356,7 @@ class GuiActions:
         dpg.configure_item(TAGS["lint_output"], width=workspace_w - 30)
 
         content_w = workspace_w - 32
-        dpg.configure_item(TAGS["preview_warning"], wrap=max(420, content_w - 8))
+        dpg.configure_item(TAGS["preview_warning"], wrap=max(220, general_right_w - 14))
         dpg.configure_item(TAGS["plan_summary"], width=content_w)
         dpg.configure_item(TAGS["plan_text"], width=content_w, height=max(260, row_h - 210))
         dpg.configure_item(TAGS["build_output"], width=content_w, height=max(260, row_h - 190))
@@ -321,7 +383,7 @@ class GuiActions:
                 },
             )
             self.state.last_species_count = len(self.state.species_list)
-            dpg.set_value(TAGS["species_count"], f"Especies: {self.state.last_species_count}")
+            dpg.set_value(TAGS["species_count"], f"Species: {self.state.last_species_count}")
         else:
             draft["species_name"] = species_name
             draft["folder_name"] = folder_name
@@ -332,8 +394,7 @@ class GuiActions:
                 return
             folder_name = str(dpg.get_value("folder_name") or "").strip() or "bulbasaur"
             assets_folder = str(dpg.get_value("assets_folder") or "").strip()
-            frame_mode = dpg.get_value("preview_frame")
-            frame_index = 0 if frame_mode == "Frame 1" else 1
+            frame_index = int(self.state.preview_frame_index or 0)
             icon_frame_index = self._icon_anim_frame
             palette_mode = "raw"
 
@@ -379,6 +440,7 @@ class GuiActions:
 
     def load_project(self, sender=None, app_data=None, user_data=None) -> None:
         try:
+            t0 = time.perf_counter()
             path = Path(dpg.get_value(TAGS["project_input"]).strip()).resolve()
             self.editor = SpeciesEditor(path)
             self.state.project_path = str(path)
@@ -394,8 +456,8 @@ class GuiActions:
                 if s.constant_name
             ]
             self.state.last_species_count = len(self.state.species_list)
-            dpg.set_value(TAGS["project_status"], f"Proyecto cargado: {path}")
-            dpg.set_value(TAGS["species_count"], f"Especies: {self.state.last_species_count}")
+            dpg.set_value(TAGS["project_status"], f"Project loaded: {path}")
+            dpg.set_value(TAGS["species_count"], f"Species: {self.state.last_species_count}")
             self._load_options_from_project()
             evo_targets = sorted(
                 {
@@ -423,17 +485,19 @@ class GuiActions:
             dpg.configure_item(TAGS["compile_btn"], enabled=True)
             self._status_validation = "idle"
             self._status_dryrun = "idle"
+            self._invalidate_payload_cache()
             self._refresh_apply_enabled()
             self._update_header_status()
-            self._set_message("Proyecto cargado correctamente")
+            self._set_message("Project loaded successfully")
             self.request_preview_refresh()
+            self._record_perf("load_project", (time.perf_counter() - t0) * 1000.0)
         except Exception:
             self.state.project_loaded = False
             self.state.editor_dirty = False
             self.state.validation_ok = False
             self.state.dry_run_valid = False
             self._set_message(traceback.format_exc())
-            dpg.set_value(TAGS["project_status"], "Error al cargar proyecto")
+            dpg.set_value(TAGS["project_status"], "Failed to load project")
             dpg.configure_item(TAGS["compile_btn"], enabled=False)
             self._refresh_apply_enabled()
             self._update_header_status()
@@ -608,7 +672,7 @@ class GuiActions:
             data = default_editor_data()
             data["mode"] = "add"
             data["constant_name"] = constant
-            data["species_name"] = str(selected.get("species_name") or "Nueva especie")
+            data["species_name"] = str(selected.get("species_name") or "New species")
             data["folder_name"] = str(selected.get("folder_name") or "new_species")
             self._suspend_dirty_events = True
             try:
@@ -642,6 +706,7 @@ class GuiActions:
         data["mode"] = "edit"
         data["constant_name"] = species.constant_name or ""
         data["species_name"] = species.species_name or ""
+        data["description"] = species.description or ""
         data["folder_name"] = species.folder_name or ""
         stats = species.base_stats
         data["hp"] = stats.hp or data["hp"]
@@ -671,6 +736,8 @@ class GuiActions:
         self.state.teachable_rows = [m for m in (species.teachable_moves_raw or []) if m in set(self.state.tmhm_options)]
         self._render_levelup_rows()
         self._render_teachable_rows()
+        if dpg.does_item_exist("description"):
+            dpg.set_value("description", str(species.description or ""))
         self._sync_evolution_param_widget()
         self.state.editor_data = self._read_editor_from_ui()
         self.state.editor_dirty = False
@@ -689,10 +756,30 @@ class GuiActions:
                 data[key] = dpg.get_value(tag)
         return data
 
+    def _enforce_text_limits(self) -> None:
+        if dpg.does_item_exist("species_name"):
+            val = str(dpg.get_value("species_name") or "")
+            if len(val) > self.MAX_SPECIES_NAME_LEN:
+                self._suspend_dirty_events = True
+                try:
+                    dpg.set_value("species_name", val[: self.MAX_SPECIES_NAME_LEN])
+                finally:
+                    self._suspend_dirty_events = False
+        if dpg.does_item_exist("description"):
+            val = str(dpg.get_value("description") or "")
+            if len(val) > self.MAX_DESCRIPTION_LEN:
+                self._suspend_dirty_events = True
+                try:
+                    dpg.set_value("description", val[: self.MAX_DESCRIPTION_LEN])
+                finally:
+                    self._suspend_dirty_events = False
+
     def mark_dirty(self, sender=None, app_data=None, user_data=None) -> None:
         if self._suspend_dirty_events:
             return
+        self._enforce_text_limits()
         self.state.editor_data = self._read_editor_from_ui()
+        self._invalidate_payload_cache()
         self.state.editor_dirty = True
         self.state.validation_ok = False
         self.state.dry_run_valid = False
@@ -711,7 +798,7 @@ class GuiActions:
         data["mode"] = "add"
         draft_constant = self._next_draft_species_constant()
         data["constant_name"] = draft_constant
-        data["species_name"] = "Nueva especie"
+        data["species_name"] = "New species"
         data["folder_name"] = draft_constant.replace("SPECIES_", "").lower()
         for key, value in data.items():
             tag = "edit_mode" if key == "mode" else key
@@ -742,7 +829,7 @@ class GuiActions:
         level = int(dpg.get_value("move_level") or 1)
         move = str(dpg.get_value("move_name") or "").strip()
         if not move:
-            self._set_message("Selecciona un movimiento")
+            self._set_message("Select a move")
             return
         self.state.level_up_rows.append({"level": max(1, min(100, level)), "move": move})
         self.state.selected_level_up_index = len(self.state.level_up_rows) - 1
@@ -752,7 +839,7 @@ class GuiActions:
     def remove_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:
         idx = self.state.selected_level_up_index
         if idx < 0 or idx >= len(self.state.level_up_rows):
-            self._set_message("Selecciona un movimiento por nivel para quitar")
+            self._set_message("Select a level-up move to remove")
             return
         del self.state.level_up_rows[idx]
         self.state.selected_level_up_index = -1
@@ -789,7 +876,7 @@ class GuiActions:
     def remove_teachable_move(self, sender=None, app_data=None, user_data=None) -> None:
         idx = self.state.selected_teachable_index
         if idx < 0 or idx >= len(self.state.teachable_rows):
-            self._set_message("Selecciona un TM/HM para quitar")
+            self._set_message("Select a TM/HM move to remove")
             return
         del self.state.teachable_rows[idx]
         self.state.selected_teachable_index = -1
@@ -798,7 +885,7 @@ class GuiActions:
 
     def show_delete_modal(self, sender=None, app_data=None, user_data=None) -> None:
         if not self.state.selected_species_constant:
-            self._set_message("Selecciona una especie para eliminar")
+            self._set_message("Select a species to delete")
             return
         if dpg.does_item_exist(TAGS["delete_replace_trainers_random"]):
             dpg.set_value(TAGS["delete_replace_trainers_random"], False)
@@ -813,16 +900,16 @@ class GuiActions:
         try:
             self.hide_delete_modal()
             if self._delete_in_progress:
-                self._set_message("Ya hay una eliminación en curso")
+                self._set_message("A deletion is already in progress")
                 return
             if not self.editor:
-                raise ValueError("Proyecto no cargado")
+                raise ValueError("Project not loaded")
             if not self.state.selected_species_constant:
-                raise ValueError("No hay especie seleccionada")
+                raise ValueError("No species selected")
 
             selected = self.editor.species_by_constant.get(self.state.selected_species_constant)
             if selected is None:
-                raise ValueError("No se pudo resolver la especie seleccionada")
+                raise ValueError("Could not resolve selected species")
 
             payload = {
                 "mode": "delete",
@@ -864,7 +951,7 @@ class GuiActions:
             )
             payload, lint_ok = self._run_lint(payload, validation.used_fallback)
             if not lint_ok:
-                raise ValueError("Lint con errores. No se puede eliminar.")
+                raise ValueError("Lint has errors. Cannot delete.")
 
             plan = self.editor.build_plan(payload, validation)
             output_dir = Path.cwd() / "output"
@@ -875,13 +962,13 @@ class GuiActions:
             (output_dir / "change_plan.json").write_text(json.dumps(plan_json, indent=2, ensure_ascii=False), encoding="utf-8")
             dpg.set_value(TAGS["plan_text"], plan_md)
             if plan.is_blocked:
-                raise ValueError("Delete DRY-RUN inválido; revisa Change Plan")
+                raise ValueError("Invalid delete dry-run; review Change Plan")
 
             self._delete_in_progress = True
             self._delete_error = None
             self._delete_messages = ""
             if dpg.does_item_exist(TAGS["delete_work_text"]):
-                dpg.set_value(TAGS["delete_work_text"], "Procesando eliminación. Espera por favor...")
+                dpg.set_value(TAGS["delete_work_text"], "Processing deletion. Please wait...")
             dpg.configure_item(TAGS["delete_work_modal"], show=True)
 
             def _worker() -> None:
@@ -902,7 +989,7 @@ class GuiActions:
         if self._delete_error:
             self._set_message(self._delete_error)
         else:
-            self._set_message(self._delete_messages or "Eliminación completada")
+            self._set_message(self._delete_messages or "Deletion completed")
             if self.state.project_path:
                 dpg.set_value(TAGS["project_input"], self.state.project_path)
             self.analyze_project()
@@ -922,14 +1009,14 @@ class GuiActions:
     def auto_use_example(self, sender=None, app_data=None, user_data=None) -> None:
         dpg.set_value("assets_folder", "")
         self.mark_dirty()
-        self._set_message("Se usara fallback interno de assets durante validacion")
+        self._set_message("Internal asset fallback will be used during validation")
 
     def add_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
         param = self._evolution_param_from_ui()
         target = str(dpg.get_value("evo_target") or "").strip()
         if not target:
-            self._set_message("Target species de evolución está vacío")
+            self._set_message("Evolution target species is empty")
             return
         self.state.evolution_rows.append({"method": method, "param": param, "target": target})
         self.state.selected_evolution_index = len(self.state.evolution_rows) - 1
@@ -939,13 +1026,13 @@ class GuiActions:
     def update_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         idx = self.state.selected_evolution_index
         if idx < 0 or idx >= len(self.state.evolution_rows):
-            self._set_message("Selecciona una evolución para actualizar")
+            self._set_message("Select an evolution row to update")
             return
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
         param = self._evolution_param_from_ui()
         target = str(dpg.get_value("evo_target") or "").strip()
         if not target:
-            self._set_message("Target species de evolución está vacío")
+            self._set_message("Evolution target species is empty")
             return
         self.state.evolution_rows[idx] = {"method": method, "param": param, "target": target}
         self._render_evo_rows()
@@ -954,7 +1041,7 @@ class GuiActions:
     def remove_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         idx = self.state.selected_evolution_index
         if idx < 0 or idx >= len(self.state.evolution_rows):
-            self._set_message("Selecciona una evolución para eliminar")
+            self._set_message("Select an evolution row to remove")
             return
         del self.state.evolution_rows[idx]
         self.state.selected_evolution_index = -1
@@ -968,6 +1055,12 @@ class GuiActions:
         self.mark_dirty()
 
     def on_preview_mode_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self.request_preview_refresh()
+
+    def toggle_preview_frame(self, sender=None, app_data=None, user_data=None) -> None:
+        self.state.preview_frame_index = 1 - int(self.state.preview_frame_index or 0)
+        if dpg.does_item_exist(TAGS["preview_frame_toggle"]):
+            dpg.set_value(TAGS["preview_frame_toggle"], f"Frame: {self.state.preview_frame_index + 1}")
         self.request_preview_refresh()
 
     def _editor_payload(self) -> dict:
@@ -1019,7 +1112,7 @@ class GuiActions:
             dpg.set_value(TAGS["lint_status"], "✔ OK")
             dpg.configure_item(TAGS["lint_status"], color=PALETTE["success"])
         else:
-            dpg.set_value(TAGS["lint_status"], "❌ errores")
+            dpg.set_value(TAGS["lint_status"], "❌ errors")
             dpg.configure_item(TAGS["lint_status"], color=PALETTE["error"])
         lines = []
         if lint.errors:
@@ -1035,36 +1128,31 @@ class GuiActions:
 
     def validate_species(self, sender=None, app_data=None, user_data=None) -> None:
         try:
-            if not self.editor:
-                raise ValueError("Primero carga un proyecto")
-            payload = self._editor_payload()
-            fallback_folder = self.editor.pick_fallback_folder()
-            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
-            _, ok = self._run_lint(payload, validation.used_fallback)
+            t0 = time.perf_counter()
+            _, _, ok, _ = self._prepare_payload_validation_lint()
             if not ok:
                 self.state.dry_run_valid = False
                 self.state.validation_ok = False
                 self._status_validation = "error"
                 self._refresh_apply_enabled()
                 self._update_header_status()
-                self._set_message("Lint con errores. Corrige antes de aplicar.")
+                self._set_message("Lint has errors. Fix before apply.")
             else:
                 self.state.validation_ok = True
                 self._status_validation = "ok"
                 self._refresh_apply_enabled()
                 self._update_header_status()
                 self._set_message("Lint OK")
+            self._record_perf("validate_species", (time.perf_counter() - t0) * 1000.0)
         except Exception:
             self._set_message(traceback.format_exc())
 
     def generate_dry_run(self, sender=None, app_data=None, user_data=None) -> None:
         try:
+            t0 = time.perf_counter()
             if not self.editor:
-                raise ValueError("Primero carga un proyecto")
-            payload = self._editor_payload()
-            fallback_folder = self.editor.pick_fallback_folder()
-            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
-            payload, lint_ok = self._run_lint(payload, validation.used_fallback)
+                raise ValueError("Load a project first")
+            payload, validation, lint_ok, sig = self._prepare_payload_validation_lint()
             if not lint_ok:
                 self.state.dry_run_valid = False
                 self.state.validation_ok = False
@@ -1072,7 +1160,7 @@ class GuiActions:
                 self._status_validation = "error"
                 self._refresh_apply_enabled()
                 self._update_header_status()
-                self._set_message("Lint con errores. DRY-RUN bloqueado.")
+                self._set_message("Lint has errors. Dry-run blocked.")
                 return
             plan = self.editor.build_plan(payload, validation)
 
@@ -1085,7 +1173,7 @@ class GuiActions:
 
             self.state.last_change_plan_md = plan_md
             self.state.last_change_plan_json = plan_json
-            self.state.last_dry_run_signature = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+            self.state.last_dry_run_signature = sig
             self.state.validation_ok = len(plan.errors) == 0
             self._status_validation = "ok" if self.state.validation_ok else "error"
             self.state.dry_run_valid = not plan.is_blocked
@@ -1096,6 +1184,7 @@ class GuiActions:
             self._refresh_apply_enabled()
             self._update_header_status()
             self._set_message(f"DRY-RUN generado. steps={len(plan.steps)}, warnings={len(plan.warnings)}, errors={len(plan.errors)}")
+            self._record_perf("generate_dry_run", (time.perf_counter() - t0) * 1000.0)
         except Exception:
             self.state.dry_run_valid = False
             self.state.validation_ok = False
@@ -1117,7 +1206,7 @@ class GuiActions:
         summary = [
             f"Archivos: {len(files)}",
             f"Cambios: {len(steps)}",
-            f"Riesgo máximo: {max_risk}",
+            f"Max risk: {max_risk}",
             f"Warnings: {warnings_count} | Errors: {errors_count}",
         ]
         dpg.set_value(TAGS["plan_summary"], "\n".join(summary))
@@ -1133,36 +1222,36 @@ class GuiActions:
 
     def confirm_apply(self, sender=None, app_data=None, user_data=None) -> None:
         try:
+            t0 = time.perf_counter()
             self.hide_confirm_modal()
             if not self.editor:
-                raise ValueError("Proyecto no cargado")
+                raise ValueError("Project not loaded")
             payload = self._editor_payload()
-            current_sig = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+            current_sig = self._payload_signature(payload)
             if current_sig != self.state.last_dry_run_signature:
-                self._set_message("Cambios detectados tras DRY-RUN; regenerando DRY-RUN automáticamente...")
+                self._set_message("Changes detected after dry-run; regenerating dry-run automatically...")
                 self.generate_dry_run()
                 if not self.state.dry_run_valid:
-                    raise ValueError("DRY-RUN automático inválido. Revisa el Change Plan.")
+                    raise ValueError("Automatic dry-run invalid. Review Change Plan.")
                 payload = self._editor_payload()
-            fallback_folder = self.editor.pick_fallback_folder()
-            validation = validate_species_definition(payload, Path.cwd() / "gui_payload.json", Path(self.state.project_path), fallback_folder)
-            payload, lint_ok = self._run_lint(payload, validation.used_fallback)
+            payload, validation, lint_ok, _ = self._prepare_payload_validation_lint()
             if not lint_ok:
-                raise ValueError("Lint con errores. No se puede aplicar.")
+                raise ValueError("Lint has errors. Cannot apply.")
             plan = self.editor.build_plan(payload, validation)
             if plan.is_blocked:
-                raise ValueError("Plan bloqueado por errores. Revisa el panel Change Plan.")
+                raise ValueError("Plan blocked by errors. Review Change Plan panel.")
             result = self.editor.apply_plan(plan, validation)
             self._set_message("\n".join(result.messages))
             self.analyze_project()
             self.generate_dry_run()
             self.request_preview_refresh()
+            self._record_perf("confirm_apply", (time.perf_counter() - t0) * 1000.0)
         except Exception:
             self._set_message(traceback.format_exc())
 
     def show_build_modal(self, sender=None, app_data=None, user_data=None) -> None:
         if not self.state.project_loaded:
-            self._set_message("Carga un proyecto antes de compilar")
+            self._set_message("Load a project before building")
             return
         dpg.configure_item(TAGS["build_modal"], show=True)
 
@@ -1173,18 +1262,18 @@ class GuiActions:
         try:
             self.hide_build_modal()
             if not self.state.project_loaded:
-                raise ValueError("Proyecto no cargado")
+                raise ValueError("Project not loaded")
             if self.state.build_in_progress:
-                self._set_message("Ya hay una compilación en curso")
+                self._set_message("A build is already in progress")
                 return
             self._status_build = "running"
             self._update_header_status()
             self.state.build_in_progress = True
             self.state.build_progress_value = 0.05
-            self.state.build_live_output = "Iniciando compilación...\n"
-            self._build_output_buffer = ["Iniciando compilación..."]
-            dpg.configure_item(TAGS["build_progress"], default_value=0.05, overlay="Compilando...")
-            dpg.set_value(TAGS["build_status"], "⏳ Compilando proyecto...")
+            self.state.build_live_output = "Starting build...\n"
+            self._build_output_buffer = ["Starting build..."]
+            dpg.configure_item(TAGS["build_progress"], default_value=0.05, overlay="Building...")
+            dpg.set_value(TAGS["build_status"], "⏳ Building project...")
             dpg.configure_item(TAGS["build_status"], color=PALETTE["warning"])
             dpg.set_value(TAGS["build_output"], self.state.build_live_output)
 
@@ -1222,7 +1311,7 @@ class GuiActions:
             self._build_result = None
             self._build_thread = threading.Thread(target=_worker, daemon=True)
             self._build_thread.start()
-            self._set_message("Compilación iniciada")
+            self._set_message("Build started")
         except Exception:
             self._set_message(traceback.format_exc())
 
@@ -1237,7 +1326,7 @@ class GuiActions:
         self.state.last_build_warnings = result.warnings
         self.state.last_build_log_path = str(log_path)
         self.state.last_build_summary_md = summary_path.read_text(encoding="utf-8")
-        status_text = "✔ Compilación exitosa" if result.ok else "❌ Falló compilación"
+        status_text = "✔ Build successful" if result.ok else "❌ Build failed"
         self._status_build = "ok" if result.ok else "error"
         self._update_header_status()
         dpg.set_value(TAGS["build_status"], status_text)
@@ -1271,7 +1360,7 @@ class GuiActions:
             else:
                 os.startfile(str(summary))  # type: ignore[attr-defined]
         except Exception:
-            self._set_message("No se pudo abrir build_summary.md automáticamente")
+            self._set_message("Could not open build_summary.md automatically")
     @staticmethod
     def _species_label(item: dict) -> str:
         return f"{item.get('species_name', '')} ({item.get('constant_name', '')})"

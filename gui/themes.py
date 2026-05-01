@@ -73,6 +73,11 @@ def _button_theme(base: tuple[int, int, int, int], hover: tuple[int, int, int, i
             dpg.add_theme_color(dpg.mvThemeCol_Text, PALETTE["text"])
             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 7)
             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 12, 9)
+        with dpg.theme_component(dpg.mvButton, enabled_state=False):
+            dpg.add_theme_color(dpg.mvThemeCol_Button, (70, 70, 84, 255))
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (70, 70, 84, 255))
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (70, 70, 84, 255))
+            dpg.add_theme_color(dpg.mvThemeCol_Text, (170, 170, 182, 255))
     return theme
 
 

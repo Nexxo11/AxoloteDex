@@ -167,6 +167,7 @@ class SpeciesReader:
         macro_tokens: dict[str, list[str]],
     ) -> None:
         species.species_name = self._extract_string_field(body, "speciesName") or species.species_name
+        species.description = self._extract_description_field(body) or species.description
         species.base_stats.hp = self._extract_int_field(body, "baseHP")
         species.base_stats.attack = self._extract_int_field(body, "baseAttack")
         species.base_stats.defense = self._extract_int_field(body, "baseDefense")
@@ -348,6 +349,22 @@ class SpeciesReader:
         if m:
             return m.group(1)
         return None
+
+    @staticmethod
+    def _extract_description_field(body: str) -> str | None:
+        raw = SpeciesReader._extract_field_raw(body, "description")
+        if not raw:
+            return None
+        m = re.search(r"COMPOUND_STRING\s*\((.*)\)\s*$", raw, flags=re.DOTALL)
+        if not m:
+            return None
+        inner = m.group(1)
+        parts = re.findall(r'"((?:\\.|[^"\\])*)"', inner, flags=re.DOTALL)
+        if not parts:
+            return None
+        text = "".join(parts)
+        text = text.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+        return text.strip()
 
     @staticmethod
     def _extract_field_raw(body: str, name: str) -> str | None:

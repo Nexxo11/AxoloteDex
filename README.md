@@ -30,6 +30,33 @@ python3 -m venv .venv
 .venv/bin/python -m pip install dearpygui pillow
 ```
 
+## Build para Windows (.exe)
+
+Para generar un ejecutable compacto para testers en Windows:
+
+1. Copia este proyecto a una maquina Windows.
+2. Abre PowerShell en la raiz del proyecto.
+3. Ejecuta:
+
+```powershell
+./scripts/build_windows.ps1
+```
+
+Alternativa con CMD:
+
+```bat
+scripts\build_windows.bat
+```
+
+Salida esperada:
+
+- `dist/AxoloteDex.exe`
+
+Notas:
+
+- El build usa `--onefile --windowed` para reducir tamaño y evitar consola.
+- El ejecutable debe generarse en Windows para garantizar compatibilidad nativa.
+
 ## Uso recomendado (usuario final): GUI
 
 Ejecuta:

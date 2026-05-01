@@ -68,6 +68,7 @@ class PokemonSpecies:
     internal_name: str | None = None
     folder_name: str | None = None
     species_name: str | None = None
+    description: str | None = None
     base_stats: SpeciesStats = field(default_factory=SpeciesStats)
     types: list[str] = field(default_factory=list)
     abilities: list[str] = field(default_factory=list)

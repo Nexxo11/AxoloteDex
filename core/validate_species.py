@@ -65,6 +65,15 @@ def validate_species_definition(
     species_name = data.get("species_name")
     if not isinstance(species_name, str) or not species_name.strip():
         result.errors.append("species_name es obligatorio")
+    elif len(species_name.strip()) > 12:
+        result.errors.append("species_name excede límite de 12 caracteres")
+
+    description = data.get("description")
+    if description is not None:
+        if not isinstance(description, str):
+            result.errors.append("description debe ser texto")
+        elif len(description) > 180:
+            result.errors.append("description excede límite de 180 caracteres")
 
     folder_name = data.get("folder_name")
     if not isinstance(folder_name, str) or not folder_name.strip():

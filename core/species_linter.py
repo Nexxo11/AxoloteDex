@@ -73,6 +73,12 @@ def lint_species_definition(
         return result
     if not name:
         result.errors.append("nombre vacío")
+    elif len(name) > 12:
+        result.errors.append("species_name excede límite de 12 caracteres")
+
+    description = str(data.get("description", ""))
+    if len(description) > 180:
+        result.errors.append("description excede límite de 180 caracteres")
 
     stats = data.get("base_stats", {})
     for key in ["hp", "attack", "defense", "speed", "sp_attack", "sp_defense"]:

@@ -6,4 +6,4 @@ STATUS: OK
 - Ninguno
 
 ## Warnings
-- sin evoluciones
+- Ninguno
