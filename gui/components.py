@@ -4,6 +4,10 @@ import dearpygui.dearpygui as dpg
 
 
 TAGS = {
+    "header_panel": "header_panel",
+    "main_row": "main_row",
+    "species_panel": "species_panel",
+    "workspace_panel": "workspace_panel",
     "project_input": "project_input",
     "project_status": "project_status",
     "species_count": "species_count",
@@ -55,15 +59,12 @@ TAGS = {
 
 
 def build_layout(actions) -> None:
-    with dpg.window(label="AxoloteDex", width=1560, height=940, tag="main_window"):
+    with dpg.window(label="AxoloteDex", width=1560, height=940, tag="main_window", no_scrollbar=True):
         _build_header(actions)
         dpg.add_spacer(height=6)
-        with dpg.group(horizontal=True):
+        with dpg.group(horizontal=True, tag=TAGS["main_row"]):
             _build_species_panel(actions)
-            _build_editor_panel(actions)
-            _build_preview_plan_panel(actions)
-        dpg.add_spacer(height=6)
-        _build_bottom_status(actions)
+            _build_workspace_panel(actions)
 
         with dpg.window(modal=True, show=False, tag=TAGS["confirm_modal"], width=440, height=160, label="Confirmar cambios"):
             dpg.add_text("Esto modificara archivos del proyecto. ¿Continuar?")
@@ -104,49 +105,48 @@ def build_layout(actions) -> None:
 
 
 def _build_header(actions) -> None:
-    with dpg.child_window(width=1540, height=112, border=False):
+    with dpg.child_window(tag=TAGS["header_panel"], width=-1, height=112, border=False, no_scrollbar=True):
         dpg.add_text("AxoloteDex")
         with dpg.group(horizontal=True):
             dpg.add_input_text(tag=TAGS["project_input"], width=780, hint="Ruta a pokeemerald-expansion")
-            dpg.add_button(label="Select Path", tag=TAGS["btn_project_select"], callback=actions.open_project_path_dialog)
-            dpg.add_button(label="Cargar", tag=TAGS["btn_load"], callback=actions.load_project)
-            dpg.add_button(label="Validar", tag=TAGS["validate_btn"], callback=actions.validate_species)
-            dpg.add_button(label="Generar Dry-run", tag=TAGS["dryrun_btn"], callback=actions.generate_dry_run)
-            dpg.add_button(label="Aplicar cambios", tag=TAGS["apply_btn"], enabled=False, callback=actions.show_confirm_modal)
-            dpg.add_button(label="Compilar", tag=TAGS["compile_btn"], enabled=False, callback=actions.show_build_modal)
-        dpg.add_text(
-            "Flujo: Validar -> Generar Dry-run -> Aplicar cambios",
-            tag=TAGS["apply_hint"],
-            color=(245, 197, 66, 255),
-        )
+            dpg.add_button(label="Select Path", tag=TAGS["btn_project_select"], callback=actions.open_project_path_dialog, width=118)
+            dpg.add_button(label="Cargar", tag=TAGS["btn_load"], callback=actions.load_project, width=92)
         with dpg.group(horizontal=True):
             dpg.add_text("Proyecto: sin cargar", tag=TAGS["project_status"])
             dpg.add_spacer(width=18)
             dpg.add_text("Especies: 0", tag=TAGS["species_count"])
-        with dpg.group(horizontal=True):
-            dpg.add_text("Proyecto: idle", tag=TAGS["status_project"])
-            dpg.add_spacer(width=12)
-            dpg.add_text("Validación: idle", tag=TAGS["status_validation"])
-            dpg.add_spacer(width=12)
-            dpg.add_text("Dry-run: idle", tag=TAGS["status_dryrun"])
-            dpg.add_spacer(width=12)
-            dpg.add_text("Build: idle", tag=TAGS["status_build"])
+            dpg.add_spacer(width=24)
+            dpg.add_text("Compatibilidad: compatible", tag=TAGS["compat_status"], color=(88, 214, 141, 255))
 
 
 def _build_species_panel(actions) -> None:
-    with dpg.child_window(label="Especies", width=330, height=710, border=True):
-        dpg.add_button(label="Nueva especie", tag=TAGS["btn_new"], callback=actions.new_species, width=300)
-        dpg.add_spacer(height=6)
-        dpg.add_input_text(hint="Buscar por nombre o constante", tag=TAGS["search_input"], callback=actions.filter_species, width=300)
-        dpg.add_listbox([], tag=TAGS["species_list"], width=300, num_items=34, callback=actions.select_species)
+    with dpg.child_window(label="Especies", tag=TAGS["species_panel"], width=330, height=710, border=True):
+        dpg.add_input_text(hint="Buscar por nombre o constante", tag=TAGS["search_input"], callback=actions.filter_species, width=-1)
+        dpg.add_spacer(height=4)
+        dpg.add_listbox([], tag=TAGS["species_list"], width=-1, num_items=22, callback=actions.select_species)
+        dpg.add_spacer(height=8)
+        dpg.add_button(label="Nueva especie", tag=TAGS["btn_new"], callback=actions.new_species, width=-1, height=36)
+        dpg.add_spacer(height=4)
+        dpg.add_button(label="Eliminar seleccionada", tag=TAGS["delete_btn"], show=False, callback=actions.show_delete_modal, width=-1, height=28)
 
 
-def _build_editor_panel(actions) -> None:
-    with dpg.child_window(label="Editor", width=620, height=710, border=True):
-        dpg.add_combo(["add", "edit"], label="Mode", tag="edit_mode", default_value="add", callback=actions.mark_dirty, width=120)
-        dpg.add_button(label="Eliminar especie seleccionada", tag=TAGS["delete_btn"], show=False, callback=actions.show_delete_modal)
+def _build_workspace_panel(actions) -> None:
+    with dpg.child_window(label="Workspace", tag=TAGS["workspace_panel"], width=1200, height=710, border=True):
         with dpg.tab_bar():
-            with dpg.tab(label="General"):
+            with dpg.tab(label="Editor"):
+                _build_editor_tab(actions)
+            with dpg.tab(label="Change Plan"):
+                _build_plan_tab(actions)
+            with dpg.tab(label="Build / Logs"):
+                _build_build_tab(actions)
+
+
+def _build_editor_tab(actions) -> None:
+    dpg.add_combo(["add", "edit"], label="Mode", tag="edit_mode", default_value="add", callback=actions.mark_dirty, width=120)
+    with dpg.tab_bar():
+        with dpg.tab(label="General"):
+                _build_inline_preview_block(actions)
+                dpg.add_separator()
                 dpg.add_input_text(label="Constant", tag="constant_name", callback=actions.mark_dirty, width=340)
                 dpg.add_input_text(label="Nombre visible", tag="species_name", callback=actions.mark_dirty, width=340)
                 dpg.add_input_text(label="Folder", tag="folder_name", callback=actions.mark_dirty, width=340)
@@ -155,20 +155,20 @@ def _build_editor_panel(actions) -> None:
                 dpg.add_input_text(label="Gender ratio", tag="gender_ratio", callback=actions.mark_dirty, width=260)
                 dpg.add_input_int(label="Catch rate", tag="catch_rate", callback=actions.mark_dirty, width=120)
                 dpg.add_input_int(label="Exp yield", tag="exp_yield", callback=actions.mark_dirty, width=120)
-            with dpg.tab(label="Stats"):
+        with dpg.tab(label="Stats"):
                 with dpg.group(horizontal=True):
                     for tag, label, val in [("hp", "HP", 45), ("attack", "Atk", 49), ("defense", "Def", 49)]:
                         dpg.add_input_int(label=label, tag=tag, default_value=val, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
                 with dpg.group(horizontal=True):
                     for tag, label, val in [("speed", "Spd", 45), ("sp_attack", "SpA", 65), ("sp_defense", "SpD", 65)]:
                         dpg.add_input_int(label=label, tag=tag, default_value=val, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
-            with dpg.tab(label="Tipos/Habilidades"):
+        with dpg.tab(label="Tipos/Habilidades"):
                 dpg.add_combo(["TYPE_NORMAL"], label="Type 1", tag="type1", callback=actions.mark_dirty, width=280)
                 dpg.add_combo([""], label="Type 2", tag="type2", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 1", tag="ability1", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 2", tag="ability2", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Hidden", tag="ability_hidden", callback=actions.mark_dirty, width=280)
-            with dpg.tab(label="Evoluciones"):
+        with dpg.tab(label="Learnsets"):
                 with dpg.group(horizontal=True):
                     dpg.add_combo(["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"], label="Método", tag="evo_method", width=170, callback=actions.on_evolution_method_change)
                     dpg.add_input_text(label="Param", tag="evo_param", width=100)
@@ -178,9 +178,8 @@ def _build_editor_panel(actions) -> None:
                     dpg.add_button(label="Agregar", callback=actions.add_evolution_row)
                     dpg.add_button(label="Actualizar", callback=actions.update_evolution_row)
                     dpg.add_button(label="Eliminar", callback=actions.remove_evolution_row)
-                    dpg.add_button(label="Limpiar", callback=actions.clear_evolutions)
+                dpg.add_button(label="Limpiar", callback=actions.clear_evolutions)
                 dpg.add_listbox([], tag=TAGS["evo_rows"], width=580, num_items=8, callback=actions.select_evolution_row)
-            with dpg.tab(label="Learnsets"):
                 dpg.add_text("Movimientos por nivel")
                 with dpg.group(horizontal=True):
                     dpg.add_input_int(label="Nivel", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
@@ -197,44 +196,61 @@ def _build_editor_panel(actions) -> None:
                     dpg.add_button(label="Agregar TM/HM", callback=actions.add_teachable_move)
                     dpg.add_button(label="Quitar TM/HM", callback=actions.remove_teachable_move)
                 dpg.add_listbox([], tag=TAGS["teachable_rows"], width=580, num_items=7, callback=actions.select_teachable_row)
-            with dpg.tab(label="Assets"):
+        with dpg.tab(label="Assets"):
                 dpg.add_input_text(label="Assets folder", tag="assets_folder", callback=actions.mark_dirty, width=420)
                 dpg.add_button(label="Usar fallback de ejemplo", callback=actions.auto_use_example)
                 dpg.add_text("Lint: idle", tag=TAGS["lint_status"])
                 dpg.add_input_text(tag=TAGS["lint_output"], multiline=True, readonly=True, width=580, height=120)
+    dpg.add_spacer(height=8)
+    with dpg.group(horizontal=True):
+        dpg.add_button(label="Validar", tag=TAGS["validate_btn"], callback=actions.validate_species)
+        dpg.add_button(label="Generar Dry-run", tag=TAGS["dryrun_btn"], callback=actions.generate_dry_run)
+        dpg.add_button(label="Aplicar cambios", tag=TAGS["apply_btn"], enabled=False, callback=actions.show_confirm_modal)
+    dpg.add_text(
+        "Flujo: Validar -> Generar Dry-run -> Aplicar cambios",
+        tag=TAGS["apply_hint"],
+        color=(245, 197, 66, 255),
+    )
 
 
-def _build_preview_plan_panel(actions) -> None:
-    with dpg.child_window(label="Preview / Plan", width=590, height=710, border=True):
-        dpg.add_text("Preview")
+def _build_inline_preview_block(actions) -> None:
+    with dpg.group(horizontal=True):
+        dpg.add_text("Frame")
+        dpg.add_radio_button(["Frame 1", "Frame 2"], tag="preview_frame", default_value="Frame 1", callback=actions.on_preview_mode_change)
+        dpg.add_spacer(width=24)
+        dpg.add_text("Palette")
+        dpg.add_radio_button(["Normal", "Shiny"], tag="preview_palette", default_value="Normal", callback=actions.on_preview_mode_change)
+    dpg.add_text("", tag=TAGS["preview_warning"], wrap=900)
+    with dpg.child_window(width=-1, height=220, border=False, no_scrollbar=True):
         with dpg.group(horizontal=True):
-            dpg.add_text("Frame")
-            dpg.add_radio_button(["Frame 1", "Frame 2"], tag="preview_frame", default_value="Frame 1", callback=actions.on_preview_mode_change)
-            dpg.add_text("Palette")
-            dpg.add_radio_button(["Normal", "Shiny"], tag="preview_palette", default_value="Normal", callback=actions.on_preview_mode_change)
-        dpg.add_text("", tag=TAGS["preview_warning"], wrap=560)
-        with dpg.child_window(width=565, height=180, border=False):
-            with dpg.group(horizontal=True):
-                dpg.add_spacer(width=35)
-                dpg.add_image("tex_front", width=128, height=128, tag=TAGS["preview_front_img"])
-                dpg.add_spacer(width=20)
-                dpg.add_image("tex_back", width=128, height=128, tag=TAGS["preview_back_img"])
-                dpg.add_spacer(width=20)
-                dpg.add_image("tex_icon", width=128, height=128, tag=TAGS["preview_icon_img"])
-        dpg.add_separator()
-        dpg.add_text("Change Plan")
-        dpg.add_text("Sin DRY-RUN aún", tag=TAGS["plan_empty"])
-        dpg.add_input_text(tag=TAGS["plan_summary"], multiline=True, readonly=True, width=565, height=72)
-        dpg.add_input_text(tag=TAGS["plan_text"], multiline=True, readonly=True, width=565, height=345)
+            dpg.add_spacer(width=40)
+            dpg.add_image("tex_front", width=144, height=144, tag=TAGS["preview_front_img"])
+            dpg.add_spacer(width=28)
+            dpg.add_image("tex_back", width=144, height=144, tag=TAGS["preview_back_img"])
+            dpg.add_spacer(width=28)
+            dpg.add_image("tex_icon", width=144, height=144, tag=TAGS["preview_icon_img"])
 
 
-def _build_bottom_status(actions) -> None:
-    with dpg.child_window(label="Consola", width=1540, height=120, border=True):
+def _build_plan_tab(actions) -> None:
+    dpg.add_text("Sin DRY-RUN aún", tag=TAGS["plan_empty"])
+    dpg.add_input_text(tag=TAGS["plan_summary"], multiline=True, readonly=True, width=-1, height=88)
+    dpg.add_input_text(tag=TAGS["plan_text"], multiline=True, readonly=True, width=-1, height=540)
+
+
+def _build_build_tab(actions) -> None:
+    with dpg.group(horizontal=True):
+        dpg.add_button(label="Compilar", tag=TAGS["compile_btn"], enabled=False, callback=actions.show_build_modal)
         dpg.add_text("Build: idle", tag=TAGS["build_status"])
-        dpg.add_progress_bar(default_value=0.0, tag=TAGS["build_progress"], width=500, overlay="Idle")
-        dpg.add_input_text(tag=TAGS["build_output"], multiline=True, readonly=True, width=1520, height=62)
-        dpg.add_text("Listo", tag=TAGS["message_text"], color=(180, 190, 210, 255))
-        with dpg.group(horizontal=True):
-            dpg.add_text("AxoloteDex v0.6.0", tag=TAGS["version_text"], color=(168, 163, 184, 255))
-            dpg.add_spacer(width=18)
-            dpg.add_text("Compatibilidad: compatible", tag=TAGS["compat_status"], color=(88, 214, 141, 255))
+    dpg.add_progress_bar(default_value=0.0, tag=TAGS["build_progress"], width=520, overlay="Idle")
+    dpg.add_input_text(tag=TAGS["build_output"], multiline=True, readonly=True, width=-1, height=560)
+    dpg.add_text("Listo", tag=TAGS["message_text"], color=(180, 190, 210, 255))
+    with dpg.group(horizontal=True):
+        dpg.add_text("AxoloteDex v0.6.0", tag=TAGS["version_text"], color=(168, 163, 184, 255))
+        dpg.add_spacer(width=18)
+        dpg.add_text("Proyecto: idle", tag=TAGS["status_project"])
+        dpg.add_spacer(width=12)
+        dpg.add_text("Validación: idle", tag=TAGS["status_validation"])
+        dpg.add_spacer(width=12)
+        dpg.add_text("Dry-run: idle", tag=TAGS["status_dryrun"])
+        dpg.add_spacer(width=12)
+        dpg.add_text("Build: idle", tag=TAGS["status_build"])

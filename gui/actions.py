@@ -45,6 +45,7 @@ class GuiActions:
         self._status_build = "idle"
         self._primary_button_theme: int | None = None
         self._secondary_button_theme: int | None = None
+        self._last_layout_size: tuple[int, int] = (-1, -1)
 
     def set_button_themes(self, primary_theme: int, secondary_theme: int) -> None:
         self._primary_button_theme = primary_theme
@@ -186,6 +187,7 @@ class GuiActions:
         self._preview_pending = True
 
     def pump(self) -> None:
+        self._apply_responsive_layout()
         if self.state.build_in_progress:
             self.state.build_progress_value += 0.03
             if self.state.build_progress_value > 0.95:
@@ -206,6 +208,83 @@ class GuiActions:
         self._preview_pending = False
         self._last_preview_refresh = now
         self._refresh_preview()
+
+    def _apply_responsive_layout(self) -> None:
+        viewport_w = max(1200, dpg.get_viewport_client_width())
+        viewport_h = max(760, dpg.get_viewport_client_height())
+        size = (viewport_w, viewport_h)
+        if size == self._last_layout_size:
+            return
+        self._last_layout_size = size
+
+        if viewport_w < 1400:
+            left_ratio = 0.26
+            header_h = 108
+        elif viewport_w < 1850:
+            left_ratio = 0.24
+            header_h = 104
+        else:
+            left_ratio = 0.22
+            header_h = 100
+
+        row_h = max(420, viewport_h - header_h - 22)
+
+        left_w = max(300, int(viewport_w * left_ratio))
+        workspace_w = max(720, viewport_w - left_w - 30)
+
+        dpg.configure_item(TAGS["header_panel"], width=viewport_w - 20, height=header_h)
+        dpg.configure_item(TAGS["species_panel"], width=left_w, height=row_h)
+        dpg.configure_item(TAGS["workspace_panel"], width=workspace_w, height=row_h)
+
+        fixed_controls_w = 118 + 92 + 44
+        dpg.configure_item(TAGS["project_input"], width=max(320, viewport_w - fixed_controls_w - 70))
+        dpg.configure_item(TAGS["species_list"], width=left_w - 22, num_items=max(12, min(22, int((row_h - 210) / 22))))
+        dpg.configure_item(TAGS["search_input"], width=left_w - 22)
+        dpg.configure_item(TAGS["btn_new"], width=left_w - 22)
+        dpg.configure_item(TAGS["delete_btn"], width=left_w - 22)
+
+        editor_field_w = max(300, workspace_w - 340)
+        dpg.configure_item("constant_name", width=editor_field_w)
+        dpg.configure_item("species_name", width=editor_field_w)
+        dpg.configure_item("folder_name", width=editor_field_w)
+        dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
+        dpg.configure_item(TAGS["evo_rows"], width=workspace_w - 30)
+        dpg.configure_item(TAGS["levelup_rows"], width=workspace_w - 30)
+        dpg.configure_item(TAGS["teachable_rows"], width=workspace_w - 30)
+        dpg.configure_item(TAGS["lint_output"], width=workspace_w - 30)
+
+        content_w = workspace_w - 32
+        dpg.configure_item(TAGS["preview_warning"], wrap=max(420, content_w - 8))
+        dpg.configure_item(TAGS["plan_summary"], width=content_w)
+        dpg.configure_item(TAGS["plan_text"], width=content_w, height=max(260, row_h - 210))
+        dpg.configure_item(TAGS["build_output"], width=content_w, height=max(260, row_h - 190))
+
+    def _next_draft_species_constant(self) -> str:
+        existing = {str(item.get("constant_name", "")).upper() for item in self.state.species_list}
+        idx = 1
+        while True:
+            candidate = f"SPECIES_NEW_{idx}"
+            if candidate not in existing:
+                return candidate
+            idx += 1
+
+    def _ensure_draft_species_in_list(self, constant_name: str, species_name: str, folder_name: str) -> None:
+        draft = next((x for x in self.state.species_list if x.get("constant_name") == constant_name), None)
+        if draft is None:
+            self.state.species_list.insert(
+                0,
+                {
+                    "constant_name": constant_name,
+                    "species_name": species_name,
+                    "folder_name": folder_name,
+                    "species": None,
+                },
+            )
+            self.state.last_species_count = len(self.state.species_list)
+            dpg.set_value(TAGS["species_count"], f"Especies: {self.state.last_species_count}")
+        else:
+            draft["species_name"] = species_name
+            draft["folder_name"] = folder_name
 
     def _refresh_preview(self) -> None:
         try:
@@ -406,7 +485,30 @@ class GuiActions:
         if selected is None:
             return
 
-        species = selected["species"]
+        species = selected.get("species")
+        if species is None:
+            self.state.selected_species_constant = constant
+            self._persist_config({"last_project_path": self.state.project_path, "last_species_constant": constant})
+            dpg.configure_item(TAGS["delete_btn"], show=False)
+            data = default_editor_data()
+            data["mode"] = "add"
+            data["constant_name"] = constant
+            data["species_name"] = str(selected.get("species_name") or "Nueva especie")
+            data["folder_name"] = str(selected.get("folder_name") or "new_species")
+            for key, value in data.items():
+                tag = "edit_mode" if key == "mode" else key
+                if dpg.does_item_exist(tag):
+                    dpg.set_value(tag, value)
+            self.state.evolution_rows = []
+            self.state.level_up_rows = []
+            self.state.teachable_rows = []
+            self._render_evo_rows()
+            self._render_levelup_rows()
+            self._render_teachable_rows()
+            self._sync_evolution_param_widget()
+            self.mark_dirty()
+            return
+
         self.state.selected_species_constant = constant
         self._persist_config({"last_project_path": self.state.project_path, "last_species_constant": constant})
         dpg.configure_item(TAGS["delete_btn"], show=True)
@@ -465,6 +567,10 @@ class GuiActions:
     def new_species(self, sender=None, app_data=None, user_data=None) -> None:
         data = default_editor_data()
         data["mode"] = "add"
+        draft_constant = self._next_draft_species_constant()
+        data["constant_name"] = draft_constant
+        data["species_name"] = "Nueva especie"
+        data["folder_name"] = draft_constant.replace("SPECIES_", "").lower()
         for key, value in data.items():
             tag = "edit_mode" if key == "mode" else key
             if dpg.does_item_exist(tag):
@@ -477,8 +583,15 @@ class GuiActions:
         self._render_teachable_rows()
         self._sync_evolution_param_widget()
         dpg.configure_item(TAGS["delete_btn"], show=False)
+        self._ensure_draft_species_in_list(data["constant_name"], data["species_name"], data["folder_name"])
+        self.filter_species()
+        dpg.set_value(TAGS["species_list"], self._species_label({
+            "constant_name": data["constant_name"],
+            "species_name": data["species_name"],
+        }))
         self.state.validation_ok = False
         self._status_validation = "idle"
+        self.state.selected_species_constant = data["constant_name"]
         self.mark_dirty()
 
     def add_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:

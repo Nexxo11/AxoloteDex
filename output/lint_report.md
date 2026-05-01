@@ -1,9 +1,11 @@
 # Lint Report
 
-STATUS: OK
+STATUS: FAILED
 
 ## Errors
-- Ninguno
+- abilities required: provide at least one ABILITY_*
 
 ## Warnings
-- Ninguno
+- sin learnset: autogenerado básico con MOVE_TACKLE
+- sin evoluciones
+- usando fallback (Bulbasaur)
