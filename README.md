@@ -1,93 +1,85 @@
-# Analisis y export de especies para pokeemerald-expansion
+# AxoloteDex (ASA)
 
-Este proyecto incluye:
+Herramienta para usuarios de `pokeemerald-expansion` que permite **agregar, editar y eliminar especies** con flujo seguro de DRY-RUN, validaciones, lint y rollback.
 
-- `analyze_expansion.py` para investigacion de estructura.
-- `species_reader.py` como lector interno de especies.
-- `export_species.py` para exportar datos estructurados.
-- `models.py` con las dataclasses del dominio.
+Esta app esta pensada para trabajo real sobre proyectos de expansion, no solo para exportar datos.
+
+## Que hace la herramienta
+
+- GUI principal para edicion de especies con preview de sprites.
+- Flujo seguro obligatorio: `Validar -> Generar DRY-RUN -> Aplicar cambios`.
+- Plan de cambios antes de escribir (`output/change_plan.md` y `output/change_plan.json`).
+- Backups automaticos antes de aplicar (`backups/YYYYMMDD_HHMMSS/`).
+- Lint que bloquea cambios inseguros o inconsistentes.
+- Check de compilacion (`make -jN`) desde CLI o GUI.
+- Modos de borrado avanzado (safe, replace+delete, force-delete).
 
 ## Requisitos
 
-- Python 3
+- Python 3.10+ (recomendado 3.11 o 3.12)
+- Proyecto `pokeemerald-expansion` funcional
+- En Linux/macOS: `make` para build check
 
-## Uso (fase 1)
+## Instalacion rapida
 
-Desde este directorio:
+Desde la carpeta del proyecto ASA:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install dearpygui pillow
+```
+
+## Uso recomendado (usuario final): GUI
+
+Ejecuta:
+
+```bash
+.venv/bin/python gui_app.py
+```
+
+Flujo normal:
+
+1. Carga la ruta de tu `pokeemerald-expansion`.
+2. Selecciona especie o crea una nueva en el editor.
+3. Pulsa `Validar`.
+4. Pulsa `Generar DRY-RUN`.
+5. Revisa `Change Plan` (errores/warnings/riesgo).
+6. Pulsa `Aplicar cambios`.
+7. (Opcional recomendado) Pulsa `Compilar proyecto`.
+
+Notas importantes:
+
+- Si cambias datos despues del DRY-RUN, la app puede regenerarlo automaticamente al aplicar.
+- Si faltan assets, se usa fallback y se reporta warning.
+- Si el lint detecta errores, no se aplica nada.
+
+## Uso por CLI
+
+### 1) Analizar estructura del proyecto
 
 ```bash
 python3 analyze_expansion.py
 ```
 
-Si tu sistema tiene alias `python -> python3`, tambien funciona:
+Genera notas de investigacion y valida estructura base sin modificar el repo objetivo.
 
-```bash
-python analyze_expansion.py
-```
-
-## Que hace
-
-- Busca automaticamente una carpeta que parezca `pokeemerald-expansion`.
-- Verifica indicadores clave de estructura del proyecto.
-- Escanea rutas relacionadas con especies, graficos, learnsets, cries y herramientas.
-- Muestra un resumen por consola.
-- Genera o actualiza `RESEARCH_NOTES.md` con los hallazgos.
-
-## Nota
-
-El script no modifica archivos dentro de la carpeta de `pokeemerald-expansion`; solo lee informacion y escribe resultados en este directorio.
-
-## Uso (fase 2: exportador)
-
-Ejecuta:
+### 2) Exportar especies
 
 ```bash
 python3 export_species.py ./pokeemerald-expansion
 ```
 
-Si tu sistema usa alias `python -> python3`, tambien sirve:
-
-```bash
-python export_species.py ./pokeemerald-expansion
-```
-
-Esto crea:
+Salidas:
 
 - `output/species_index.json`
 - `output/species_summary.md`
 - `output/parse_warnings.md`
 
-## Archivos que lee el exportador
-
-- `include/constants/species.h`
-- `src/data/pokemon/species_info.h`
-- `src/data/pokemon/species_info/gen_*_families.h`
-- `src/data/graphics/pokemon.h`
-- `src/data/pokemon/level_up_learnsets/gen_*.h`
-- `src/data/pokemon/egg_moves.h`
-- `src/data/pokemon/teachable_learnsets.h`
-
-## Limitaciones actuales
-
-- El parser es por regex/bloques, no es un parser C completo.
-- Campos muy complejos con macros anidadas pueden quedar en formato raw o vacio.
-- Los IDs solo se resuelven cuando el `#define` de `SPECIES_*` es numerico directo.
-- En casos raros, se registra warning y se continua sin abortar.
-
-## Ejemplos de datos exportados
-
-- `constant_name`: `SPECIES_BULBASAUR`
-- `species_name`: `Bulbasaur`
-- `types`: `["TYPE_GRASS", "TYPE_POISON"]`
-- `abilities`: `["ABILITY_OVERGROW", "ABILITY_NONE", "ABILITY_CHLOROPHYLL"]`
-- `graphics.front_path`: `graphics/pokemon/bulbasaur/anim_front.4bpp.smol`
-
-## Fase 3: editor con DRY-RUN
-
-### Comando
+### 3) Generar plan de cambio (DRY-RUN)
 
 ```bash
-python3 apply_species_change.py <ruta_proyecto> <archivo.json> [--apply] [--build-check]
+python3 apply_species_change.py <ruta_proyecto> <archivo.json>
 ```
 
 Ejemplo:
@@ -96,43 +88,36 @@ Ejemplo:
 python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json
 ```
 
-Por defecto es DRY-RUN y no modifica archivos.
-
-Para aplicar cambios reales:
+### 4) Aplicar cambios reales
 
 ```bash
 python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json --apply
 ```
 
-### Salidas
+### 5) Aplicar y compilar
 
-- `output/change_plan.md`
-- `output/change_plan.json`
+```bash
+python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json --apply --build-check
+```
 
-### Seguridad
+Salida de build:
 
-- Sin `--apply`: solo genera plan.
-- Con `--apply`: crea backup en `backups/YYYYMMDD_HHMMSS/` antes de escribir.
-- Se evita tocar archivos autogenerados.
-- Si en modo `add` la constante ya existe, se bloquea.
-- Si en modo `edit` la constante no existe, se bloquea.
+- `output/build_log.txt`
+- `output/build_summary.md`
 
-### Assets y fallback
+## Borrado de especies (GUI)
 
-Assets esperados:
+La GUI soporta modos de borrado:
 
-- `front.png`
-- `back.png`
-- `icon.png`
-- `footprint.png`
-- `normal.pal`
-- `shiny.pal`
+- `safe`: bloquea si encuentra referencias externas.
+- `replace+delete`: intenta reemplazar referencias y luego borrar.
+- `force-delete`: elimina aunque queden referencias (riesgo alto).
 
-Si faltan, se intenta fallback usando una especie existente de `graphics/pokemon/` (por ejemplo `bulbasaur`) y se registra warning en el plan.
+Recomendacion: usar siempre `safe` o `replace+delete` y compilar al final.
 
-## Rollback rapido
+## Rollback de backup
 
-Preview (sin cambios):
+Ver preview de rollback (sin aplicar):
 
 ```bash
 python3 rollback_backup.py ./pokeemerald-expansion --latest --remove-path graphics/pokemon/testmon
@@ -144,54 +129,61 @@ Aplicar rollback real:
 python3 rollback_backup.py ./pokeemerald-expansion --latest --remove-path graphics/pokemon/testmon --apply
 ```
 
-`--remove-path` es util para borrar carpetas nuevas creadas por un alta (por ejemplo assets de una especie nueva).
+`--remove-path` ayuda a limpiar carpetas creadas por altas nuevas.
 
-## Fase 4: GUI DearPyGui
+## Comandos de depuracion y soporte
 
-### Instalacion de dependencias
-
-Recomendado (entorno virtual):
+Si algo falla, estos comandos ayudan a diagnosticar rapido:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install dearpygui
-.venv/bin/python -m pip install pillow
-```
+# 1) Ejecutar pruebas de seguridad del editor
+python3 -m unittest tests.test_species_editor_safety -v
 
-### Ejecutar GUI
+# 2) Ejecutar pruebas de GUI (requiere dearpygui instalado)
+python3 -m unittest tests.test_gui_dry_run -v
 
-```bash
+# 3) Levantar GUI desde venv
 .venv/bin/python gui_app.py
+
+# 4) Verificar que la expansion compile
+make -j$(nproc)
 ```
 
-### Flujo de uso
+Archivos clave para revisar cuando hay errores:
 
-1. Cargar proyecto en el Panel Proyecto.
-2. Elegir/editar datos en Panel Editor.
-3. Click en `Generar DRY-RUN`.
-4. Revisar `Panel Change Plan`.
-5. Click en `Aplicar cambios` y confirmar modal.
+- `output/change_plan.md`
+- `output/change_plan.json`
+- `output/lint_report.md`
+- `output/build_log.txt`
+- `output/build_summary.md`
 
-La GUI nunca aplica sin preview previo valido.
+## Estructura de assets esperada
 
-## Fase 5: Build check + preview sprites
+Para alta/edicion de especie se esperan estos archivos en el folder de assets:
 
-- `apply_species_change.py --build-check` ahora ejecuta `make -j$(nproc)`.
-- Se generan:
-  - `output/build_log.txt`
-  - `output/build_summary.md`
-- La GUI incluye sección **Build Status** con botón `Compilar proyecto`.
-- El editor muestra preview de `front`, `back` e `icon`.
-- Si faltan sprites, usa fallback `graphics/pokemon/bulbasaur/` y muestra warning.
+- `front.png`
+- `back.png`
+- `icon.png`
+- `footprint.png`
+- `normal.pal`
+- `shiny.pal`
 
-## Fase 6: Lint + autogen + pixel-perfect
+Si alguno falta, el sistema intenta fallback con una especie existente y lo deja registrado como warning.
 
-- Nuevo módulo: `species_linter.py`.
-- Genera `output/lint_report.md`.
-- Errores de lint bloquean apply (GUI y CLI).
-- Autogeneración simple:
-  - hidden ability faltante -> `ABILITY_NONE`
-  - learnset vacío -> move básico por tipo (ej. `TYPE_GRASS` -> `MOVE_ABSORB`)
-- Preview de sprites pixel-art sin blur:
-  - se reescala con `Image.NEAREST`
-  - manejo de front/icon con dos frames en un solo PNG (usa frame izquierdo)
+## Seguridad y limites
+
+- Sin `--apply`, nunca se escriben cambios (solo plan).
+- Con `--apply`, siempre se genera backup antes de tocar archivos.
+- El parser usa enfoque por bloques/regex (no parser C completo).
+- Casos de macros muy complejos pueden generar warnings en lugar de abortar.
+
+## Consejos para evitar roturas
+
+- No uses `force-delete` salvo que sepas exactamente el impacto.
+- Compila despues de cualquier borrado o cambio grande.
+- Si una especie esta muy referenciada, prefiere `replace+delete`.
+- Mantene versionados `output/` y backups locales solo para debugging, no para release.
+
+## Version
+
+Interfaz marcada como `AxoloteDex v0.6.0`.
