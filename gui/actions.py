@@ -104,6 +104,43 @@ class GuiActions:
     def set_theme_switcher(self, switcher) -> None:
         self._theme_switcher = switcher
 
+    @staticmethod
+    def _to_rgba255(value) -> tuple[int, int, int, int]:
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            vals = list(value)
+            if any(isinstance(v, float) and 0.0 <= v <= 1.0 for v in vals[:3]):
+                rgb = [int(max(0.0, min(1.0, float(v))) * 255) for v in vals[:3]]
+            else:
+                rgb = [int(max(0, min(255, int(v)))) for v in vals[:3]]
+            a_src = vals[3] if len(vals) > 3 else 255
+            if isinstance(a_src, float) and 0.0 <= a_src <= 1.0:
+                a = int(max(0.0, min(1.0, a_src)) * 255)
+            else:
+                a = int(max(0, min(255, int(a_src))))
+            return rgb[0], rgb[1], rgb[2], a
+        return 0, 0, 0, 255
+
+    def _custom_theme_palette_from_ui(self) -> dict[str, tuple[int, int, int, int]]:
+        mapping = {
+            "background": "settings_color_background",
+            "panel": "settings_color_panel",
+            "input": "settings_color_input",
+            "border": "settings_color_border",
+            "primary": "settings_color_primary",
+            "primary_hover": "settings_color_primary_hover",
+            "text": "settings_color_text",
+            "muted_text": "settings_color_muted_text",
+        }
+        out: dict[str, tuple[int, int, int, int]] = {}
+        for key, tag_name in mapping.items():
+            tag = TAGS.get(tag_name)
+            if tag and dpg.does_item_exist(tag):
+                out[key] = self._to_rgba255(dpg.get_value(tag))
+        return out
+
+    def _persist_custom_theme(self) -> None:
+        self._persist_config({"settings_custom_theme": self._custom_theme_palette_from_ui()})
+
     def _update_action_button_progress(self) -> None:
         if self._primary_button_theme is None or self._secondary_button_theme is None or self._disabled_button_theme is None:
             return
@@ -825,9 +862,22 @@ class GuiActions:
 
     def on_settings_theme_change(self, sender=None, app_data=None, user_data=None) -> None:
         choice = str(app_data or dpg.get_value(TAGS.get("settings_theme", "")) or "Dark")
+        custom_group = TAGS.get("settings_custom_colors_group")
+        if custom_group and dpg.does_item_exist(custom_group):
+            dpg.configure_item(custom_group, show=(choice == "Personalizado"))
         if callable(self._theme_switcher):
-            self._theme_switcher(choice)
+            self._theme_switcher(choice, self._custom_theme_palette_from_ui())
         self._persist_config({"settings_theme": choice})
+        if choice == "Personalizado":
+            self._persist_custom_theme()
+
+    def on_custom_theme_color_change(self, sender=None, app_data=None, user_data=None) -> None:
+        theme_choice = str(dpg.get_value(TAGS.get("settings_theme", "")) or "Dark")
+        if theme_choice != "Personalizado":
+            return
+        if callable(self._theme_switcher):
+            self._theme_switcher("Personalizado", self._custom_theme_palette_from_ui())
+        self._persist_custom_theme()
 
     def open_axolote_ow_adder(self, sender=None, app_data=None, user_data=None) -> None:
         url = "https://github.com/Nexxo11/AxoloteOwAdder"

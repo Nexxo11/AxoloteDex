@@ -90,6 +90,15 @@ TAGS = {
     "settings_notify_success": "settings_notify_success",
     "settings_notify_warning": "settings_notify_warning",
     "cry_play_btn": "cry_play_btn",
+    "settings_custom_colors_group": "settings_custom_colors_group",
+    "settings_color_background": "settings_color_background",
+    "settings_color_panel": "settings_color_panel",
+    "settings_color_input": "settings_color_input",
+    "settings_color_border": "settings_color_border",
+    "settings_color_primary": "settings_color_primary",
+    "settings_color_primary_hover": "settings_color_primary_hover",
+    "settings_color_text": "settings_color_text",
+    "settings_color_muted_text": "settings_color_muted_text",
 }
 
 
@@ -138,7 +147,18 @@ def build_layout(actions) -> None:
             dpg.add_spacer(height=10)
 
             dpg.add_text("Theme")
-            dpg.add_combo(["Dark", "Light", "System"], default_value="Dark", width=240, tag=TAGS["settings_theme"], callback=actions.on_settings_theme_change)
+            dpg.add_combo(["Dark", "Light", "System", "Personalizado"], default_value="Dark", width=240, tag=TAGS["settings_theme"], callback=actions.on_settings_theme_change)
+            with dpg.group(tag=TAGS["settings_custom_colors_group"], show=False):
+                dpg.add_spacer(height=8)
+                dpg.add_text("Custom colors")
+                dpg.add_color_edit(tag=TAGS["settings_color_background"], label="Background", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_panel"], label="Panel", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_input"], label="Input", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_border"], label="Border", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_primary"], label="Primary button", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_primary_hover"], label="Primary hover", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_text"], label="Text", alpha_bar=False, callback=actions.on_custom_theme_color_change)
+                dpg.add_color_edit(tag=TAGS["settings_color_muted_text"], label="Muted text", alpha_bar=False, callback=actions.on_custom_theme_color_change)
             dpg.add_spacer(height=10)
 
             dpg.add_text("Backup")

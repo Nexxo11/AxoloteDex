@@ -8,6 +8,8 @@ from gui.actions import GuiActions
 from gui.components import TAGS, build_layout
 from gui.state import GuiState, default_editor_data, load_config, save_config
 from gui.themes import (
+    PALETTE,
+    create_custom_theme,
     create_disabled_button_theme,
     create_dark_theme,
     create_danger_button_theme,
@@ -64,8 +66,12 @@ def main() -> None:
     dark_theme = create_dark_theme()
     light_theme = create_light_theme()
 
-    def apply_theme_choice(choice: str) -> None:
+    def apply_theme_choice(choice: str, custom_palette: dict | None = None) -> None:
         selected = str(choice or "Dark")
+        if selected == "Personalizado":
+            theme = create_custom_theme(custom_palette or {})
+            dpg.bind_theme(theme)
+            return
         resolved = detect_system_theme() if selected == "System" else selected
         dpg.bind_theme(light_theme if resolved == "Light" else dark_theme)
 
@@ -105,7 +111,30 @@ def main() -> None:
         dpg.set_value(TAGS["settings_language"], cfg["settings_language"])
     if dpg.does_item_exist(TAGS["settings_theme"]) and isinstance(cfg.get("settings_theme"), str):
         dpg.set_value(TAGS["settings_theme"], cfg["settings_theme"])
-        apply_theme_choice(cfg["settings_theme"])
+    custom_cfg = cfg.get("settings_custom_theme") if isinstance(cfg.get("settings_custom_theme"), dict) else {}
+    color_tag_map = {
+        "background": TAGS["settings_color_background"],
+        "panel": TAGS["settings_color_panel"],
+        "input": TAGS["settings_color_input"],
+        "border": TAGS["settings_color_border"],
+        "primary": TAGS["settings_color_primary"],
+        "primary_hover": TAGS["settings_color_primary_hover"],
+        "text": TAGS["settings_color_text"],
+        "muted_text": TAGS["settings_color_muted_text"],
+    }
+    for key, tag in color_tag_map.items():
+        if not dpg.does_item_exist(tag):
+            continue
+        raw = custom_cfg.get(key, PALETTE[key])
+        if isinstance(raw, (list, tuple)) and len(raw) >= 4:
+            dpg.set_value(tag, [int(raw[0]), int(raw[1]), int(raw[2]), int(raw[3])])
+        else:
+            base = PALETTE[key]
+            dpg.set_value(tag, [base[0], base[1], base[2], base[3]])
+
+    chosen_theme = str(dpg.get_value(TAGS["settings_theme"])) if dpg.does_item_exist(TAGS["settings_theme"]) else str(cfg.get("settings_theme") or "Dark")
+    apply_theme_choice(chosen_theme, custom_cfg)
+    actions.on_settings_theme_change()
     if dpg.does_item_exist(TAGS["settings_backup_auto"]) and isinstance(cfg.get("settings_backup_auto"), bool):
         dpg.set_value(TAGS["settings_backup_auto"], cfg["settings_backup_auto"])
     if dpg.does_item_exist(TAGS["settings_backup_keep"]) and isinstance(cfg.get("settings_backup_keep"), int):
@@ -137,6 +166,16 @@ def main() -> None:
             "settings_backup_keep": int(dpg.get_value(TAGS["settings_backup_keep"])) if dpg.does_item_exist(TAGS["settings_backup_keep"]) else 15,
             "settings_notify_success": bool(dpg.get_value(TAGS["settings_notify_success"])) if dpg.does_item_exist(TAGS["settings_notify_success"]) else True,
             "settings_notify_warning": bool(dpg.get_value(TAGS["settings_notify_warning"])) if dpg.does_item_exist(TAGS["settings_notify_warning"]) else True,
+            "settings_custom_theme": {
+                "background": list(dpg.get_value(TAGS["settings_color_background"])) if dpg.does_item_exist(TAGS["settings_color_background"]) else list(PALETTE["background"]),
+                "panel": list(dpg.get_value(TAGS["settings_color_panel"])) if dpg.does_item_exist(TAGS["settings_color_panel"]) else list(PALETTE["panel"]),
+                "input": list(dpg.get_value(TAGS["settings_color_input"])) if dpg.does_item_exist(TAGS["settings_color_input"]) else list(PALETTE["input"]),
+                "border": list(dpg.get_value(TAGS["settings_color_border"])) if dpg.does_item_exist(TAGS["settings_color_border"]) else list(PALETTE["border"]),
+                "primary": list(dpg.get_value(TAGS["settings_color_primary"])) if dpg.does_item_exist(TAGS["settings_color_primary"]) else list(PALETTE["primary"]),
+                "primary_hover": list(dpg.get_value(TAGS["settings_color_primary_hover"])) if dpg.does_item_exist(TAGS["settings_color_primary_hover"]) else list(PALETTE["primary_hover"]),
+                "text": list(dpg.get_value(TAGS["settings_color_text"])) if dpg.does_item_exist(TAGS["settings_color_text"]) else list(PALETTE["text"]),
+                "muted_text": list(dpg.get_value(TAGS["settings_color_muted_text"])) if dpg.does_item_exist(TAGS["settings_color_muted_text"]) else list(PALETTE["muted_text"]),
+            },
         },
     )
     dpg.destroy_context()

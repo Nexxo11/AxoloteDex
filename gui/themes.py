@@ -42,50 +42,7 @@ LIGHT_PALETTE = {
 }
 
 
-def create_dark_theme() -> int:
-    with dpg.theme() as theme:
-        with dpg.theme_component(dpg.mvAll):
-            dpg.add_theme_color(dpg.mvThemeCol_WindowBg, PALETTE["background"])
-            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, PALETTE["panel"])
-            dpg.add_theme_color(dpg.mvThemeCol_PopupBg, PALETTE["panel"])
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBg, PALETTE["input"])
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, PALETTE["input_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, PALETTE["panel_alt"])
-            dpg.add_theme_color(dpg.mvThemeCol_Border, PALETTE["border"])
-            dpg.add_theme_color(dpg.mvThemeCol_BorderShadow, (0, 0, 0, 0))
-            dpg.add_theme_color(dpg.mvThemeCol_Button, PALETTE["primary"])
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, PALETTE["primary_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, PALETTE["primary"])
-            dpg.add_theme_color(dpg.mvThemeCol_Text, PALETTE["text"])
-            dpg.add_theme_color(dpg.mvThemeCol_TextDisabled, PALETTE["muted_text"])
-            dpg.add_theme_color(dpg.mvThemeCol_Header, PALETTE["panel_alt"])
-            dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, PALETTE["primary"])
-            dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, PALETTE["primary_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_Tab, PALETTE["panel"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, PALETTE["panel_alt"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabActive, PALETTE["primary"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabUnfocused, PALETTE["panel"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabUnfocusedActive, PALETTE["panel_alt"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, PALETTE["panel"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, PALETTE["panel_alt"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabHovered, PALETTE["primary"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabActive, PALETTE["primary_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_CheckMark, PALETTE["primary_hover"])
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 7)
-            dpg.add_theme_style(dpg.mvStyleVar_GrabRounding, 7)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
-            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 8)
-            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 10, 9)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 12, 12)
-            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 10, 7)
-            dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 1)
-            dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 1)
-            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 12)
-    return theme
-
-
-def create_light_theme() -> int:
-    p = LIGHT_PALETTE
+def _create_theme_from_palette(p: dict[str, tuple[int, int, int, int]]) -> int:
     with dpg.theme() as theme:
         with dpg.theme_component(dpg.mvAll):
             dpg.add_theme_color(dpg.mvThemeCol_WindowBg, p["background"])
@@ -125,6 +82,20 @@ def create_light_theme() -> int:
             dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 1)
             dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 12)
     return theme
+
+
+def create_dark_theme() -> int:
+    return _create_theme_from_palette(PALETTE)
+
+
+def create_light_theme() -> int:
+    return _create_theme_from_palette(LIGHT_PALETTE)
+
+
+def create_custom_theme(custom_palette: dict[str, tuple[int, int, int, int]]) -> int:
+    merged = dict(PALETTE)
+    merged.update(custom_palette)
+    return _create_theme_from_palette(merged)
 
 
 def detect_system_theme() -> str:
