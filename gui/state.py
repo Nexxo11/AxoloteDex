@@ -34,12 +34,16 @@ class GuiState:
     item_options: list[str] = field(default_factory=list)
     move_options: list[str] = field(default_factory=list)
     tmhm_options: list[str] = field(default_factory=list)
+    tutor_options: list[str] = field(default_factory=list)
+    cry_options: list[str] = field(default_factory=list)
     evolution_rows: list[dict[str, str]] = field(default_factory=list)
     selected_evolution_index: int = -1
     level_up_rows: list[dict[str, int | str]] = field(default_factory=list)
     selected_level_up_index: int = -1
     teachable_rows: list[str] = field(default_factory=list)
     selected_teachable_index: int = -1
+    tutor_rows: list[str] = field(default_factory=list)
+    selected_tutor_index: int = -1
     preview_frame_index: int = 0
     preview_palette_mode: str = "normal"
 
@@ -68,6 +72,13 @@ def default_editor_data() -> dict[str, Any]:
         "gender_ratio": "PERCENT_FEMALE(50)",
         "catch_rate": 45,
         "exp_yield": 64,
+        "ev_hp": 0,
+        "ev_attack": 0,
+        "ev_defense": 0,
+        "ev_speed": 0,
+        "ev_sp_attack": 0,
+        "ev_sp_defense": 0,
+        "cry_id": "CRY_NONE",
         "evo_method": "EVO_LEVEL",
         "evo_param": "1",
         "evo_target": "",

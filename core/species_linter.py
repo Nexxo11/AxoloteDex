@@ -86,6 +86,19 @@ def lint_species_definition(
         if not isinstance(val, int) or val < 1 or val > 255:
             result.errors.append(f"stats fuera de rango: {key}={val}")
 
+    cry_id = str(data.get("cry_id", "")).strip()
+    if cry_id and not cry_id.startswith("CRY_"):
+        result.errors.append(f"cry_id inválido: {cry_id}")
+
+    ev_yields = data.get("ev_yields", {})
+    if isinstance(ev_yields, dict):
+        for key in ["hp", "attack", "defense", "speed", "sp_attack", "sp_defense"]:
+            val = ev_yields.get(key, 0)
+            if not isinstance(val, int) or val < 0 or val > 3:
+                result.errors.append(f"ev_yields fuera de rango: {key}={val}")
+    else:
+        result.errors.append("ev_yields inválido: se esperaba objeto")
+
     valid_types = _load_valid_tokens(project_root / "include/constants/battle.h", "TYPE_")
     valid_abilities = _load_valid_tokens(project_root / "include/constants/abilities.h", "ABILITY_")
 
@@ -135,6 +148,13 @@ def lint_species_definition(
             m = str(move).strip()
             if not m.startswith("MOVE_"):
                 result.errors.append(f"tmhm_learnset move invalido en indice {i}: {m}")
+
+    tutor = data.get("tutor_learnset", [])
+    if isinstance(tutor, list):
+        for i, move in enumerate(tutor):
+            m = str(move).strip()
+            if not m.startswith("MOVE_"):
+                result.errors.append(f"tutor_learnset move invalido en indice {i}: {m}")
 
     if using_fallback_assets:
         result.warnings.append("usando fallback (Bulbasaur)")

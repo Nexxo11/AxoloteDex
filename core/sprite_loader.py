@@ -380,7 +380,13 @@ def load_texture_data(
         rgba = _apply_palette_transform(rgba, path.parent, palette_mode, kind, palette_variant)
         w, h = rgba.size
         data = []
-        for r, g, b, a in rgba.getdata():
-            data.extend([r / 255.0, g / 255.0, b / 255.0, a / 255.0])
+        raw = rgba.tobytes()
+        for i in range(0, len(raw), 4):
+            data.extend([
+                raw[i] / 255.0,
+                raw[i + 1] / 255.0,
+                raw[i + 2] / 255.0,
+                raw[i + 3] / 255.0,
+            ])
     _CACHE[key] = (w, h, data)
     return _CACHE[key]

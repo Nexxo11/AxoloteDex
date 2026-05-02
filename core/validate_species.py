@@ -75,6 +75,20 @@ def validate_species_definition(
         elif len(description) > 180:
             result.errors.append("description excede límite de 180 caracteres")
 
+    cry_id = data.get("cry_id")
+    if cry_id is not None and (not isinstance(cry_id, str) or not cry_id.startswith("CRY_")):
+        result.errors.append("cry_id debe iniciar con CRY_")
+
+    ev_yields = data.get("ev_yields")
+    if ev_yields is not None:
+        if not isinstance(ev_yields, dict):
+            result.errors.append("ev_yields debe ser objeto")
+        else:
+            for key in ["hp", "attack", "defense", "speed", "sp_attack", "sp_defense"]:
+                value = ev_yields.get(key, 0)
+                if not isinstance(value, int) or value < 0 or value > 3:
+                    result.errors.append(f"ev_yields.{key} fuera de rango (0..3): {value}")
+
     folder_name = data.get("folder_name")
     if not isinstance(folder_name, str) or not folder_name.strip():
         result.errors.append("folder_name es obligatorio")

@@ -44,6 +44,13 @@ TAGS = {
     "evo_rows": "evo_rows",
     "levelup_rows": "levelup_rows",
     "teachable_rows": "teachable_rows",
+    "tutor_rows": "tutor_rows",
+    "learnset_level_panel": "learnset_level_panel",
+    "learnset_tmhm_panel": "learnset_tmhm_panel",
+    "stats_radar_panel": "stats_radar_panel",
+    "stats_radar_drawlist": "stats_radar_drawlist",
+    "stats_fields_panel": "stats_fields_panel",
+    "stats_radar_handlers": "stats_radar_handlers",
     "path_dialog": "path_dialog",
     "delete_replace_trainers_random": "delete_replace_trainers_random",
     "compat_status": "compat_status",
@@ -168,15 +175,55 @@ def _build_editor_tab(actions) -> None:
                         dpg.add_input_text(label="Gender ratio", tag="gender_ratio", callback=actions.mark_dirty, width=260)
                         dpg.add_input_int(label="Catch rate", tag="catch_rate", callback=actions.mark_dirty, width=120)
                         dpg.add_input_int(label="Exp yield", tag="exp_yield", callback=actions.mark_dirty, width=120)
+                        dpg.add_combo(["CRY_NONE"], label="Cry ID", tag="cry_id", callback=actions.mark_dirty, width=320)
                     with dpg.child_window(tag=TAGS["general_right"], width=360, height=430, border=False):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats"):
                 with dpg.group(horizontal=True):
-                    for tag, label, val in [("hp", "HP", 45), ("attack", "Atk", 49), ("defense", "Def", 49)]:
-                        dpg.add_input_int(label=label, tag=tag, default_value=val, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
-                with dpg.group(horizontal=True):
-                    for tag, label, val in [("speed", "Spd", 45), ("sp_attack", "SpA", 65), ("sp_defense", "SpD", 65)]:
-                        dpg.add_input_int(label=label, tag=tag, default_value=val, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                    with dpg.child_window(tag=TAGS["stats_fields_panel"], border=False, width=500, height=320, no_scrollbar=True):
+                        with dpg.group(horizontal=True):
+                            with dpg.child_window(border=False, width=240, height=300):
+                                dpg.add_text("Base Stats")
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("HP ")
+                                    dpg.add_input_int(tag="hp", default_value=45, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Atk")
+                                    dpg.add_input_int(tag="attack", default_value=49, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Def")
+                                    dpg.add_input_int(tag="defense", default_value=49, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Spd")
+                                    dpg.add_input_int(tag="speed", default_value=45, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("SpA")
+                                    dpg.add_input_int(tag="sp_attack", default_value=65, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("SpD")
+                                    dpg.add_input_int(tag="sp_defense", default_value=65, min_value=1, max_value=255, width=110, callback=actions.mark_dirty)
+                            with dpg.child_window(border=False, width=240, height=300):
+                                dpg.add_text("EV Yield")
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("HP ")
+                                    dpg.add_input_int(tag="ev_hp", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Atk")
+                                    dpg.add_input_int(tag="ev_attack", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Def")
+                                    dpg.add_input_int(tag="ev_defense", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("Spd")
+                                    dpg.add_input_int(tag="ev_speed", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("SpA")
+                                    dpg.add_input_int(tag="ev_sp_attack", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_text("SpD")
+                                    dpg.add_input_int(tag="ev_sp_defense", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
+                    with dpg.child_window(tag=TAGS["stats_radar_panel"], border=False, width=-1, height=320, no_scrollbar=True):
+                        dpg.add_drawlist(tag=TAGS["stats_radar_drawlist"], width=-1, height=-1)
         with dpg.tab(label="Tipos/Habilidades"):
                 dpg.add_combo(["TYPE_NORMAL"], label="Type 1", tag="type1", callback=actions.mark_dirty, width=280)
                 dpg.add_combo([""], label="Type 2", tag="type2", callback=actions.mark_dirty, width=280)
@@ -200,25 +247,32 @@ def _build_editor_tab(actions) -> None:
                 dpg.add_listbox([], tag=TAGS["evo_rows"], width=580, num_items=8, callback=actions.select_evolution_row)
 
         with dpg.tab(label="Learnsets"):
-                dpg.add_text("Level-up moves")
                 with dpg.group(horizontal=True):
-                    dpg.add_input_int(label="Level", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
-                    dpg.add_combo(["MOVE_TACKLE"], label="Move", tag="move_name", width=260)
-                    dpg.add_button(label="Add", callback=actions.add_levelup_move)
-                    dpg.add_button(label="Remove", callback=actions.remove_levelup_move)
-                    dpg.add_button(label="↑", callback=actions.move_levelup_up)
-                    dpg.add_button(label="↓", callback=actions.move_levelup_down)
-                dpg.add_listbox([], tag=TAGS["levelup_rows"], width=580, num_items=7, callback=actions.select_levelup_row)
+                    with dpg.child_window(tag=TAGS["learnset_level_panel"], width=430, height=255, border=False):
+                        dpg.add_text("Level-up moves")
+                        with dpg.group(horizontal=True):
+                            dpg.add_input_int(label="Level", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
+                            dpg.add_combo(["MOVE_TACKLE"], label="Move", tag="move_name", width=260)
+                            dpg.add_button(label="Add", callback=actions.add_levelup_move)
+                            dpg.add_button(label="Remove", callback=actions.remove_levelup_move)
+                            dpg.add_button(label="↑", callback=actions.move_levelup_up)
+                            dpg.add_button(label="↓", callback=actions.move_levelup_down)
+                        dpg.add_listbox([], tag=TAGS["levelup_rows"], width=-1, num_items=7, callback=actions.select_levelup_row)
+                    with dpg.child_window(tag=TAGS["learnset_tmhm_panel"], width=430, height=255, border=False):
+                        dpg.add_text("TM/HM")
+                        with dpg.group(horizontal=True):
+                            dpg.add_combo(["MOVE_TACKLE"], label="TM/HM Move", tag="tmhm_move", width=300)
+                            dpg.add_button(label="Add TM/HM", callback=actions.add_teachable_move)
+                            dpg.add_button(label="Remove TM/HM", callback=actions.remove_teachable_move)
+                        dpg.add_listbox([], tag=TAGS["teachable_rows"], width=-1, num_items=7, callback=actions.select_teachable_row)
                 dpg.add_spacer(height=8)
-                dpg.add_text("TM/HM")
+                dpg.add_text("Move Tutor")
                 with dpg.group(horizontal=True):
-                    dpg.add_combo(["MOVE_TACKLE"], label="TM/HM Move", tag="tmhm_move", width=300)
-                    dpg.add_button(label="Add TM/HM", callback=actions.add_teachable_move)
-                    dpg.add_button(label="Remove TM/HM", callback=actions.remove_teachable_move)
-                dpg.add_listbox([], tag=TAGS["teachable_rows"], width=580, num_items=7, callback=actions.select_teachable_row)
-        with dpg.tab(label="Assets"):
-                dpg.add_input_text(label="Assets folder", tag="assets_folder", callback=actions.mark_dirty, width=420)
-                dpg.add_button(label="Use example fallback", callback=actions.auto_use_example)
+                    dpg.add_combo(["MOVE_TACKLE"], label="Tutor Move", tag="tutor_move", width=300)
+                    dpg.add_button(label="Add Tutor", callback=actions.add_tutor_move)
+                    dpg.add_button(label="Remove Tutor", callback=actions.remove_tutor_move)
+                dpg.add_listbox([], tag=TAGS["tutor_rows"], width=580, num_items=7, callback=actions.select_tutor_row)
+        with dpg.tab(label="Lint"):
                 dpg.add_text("Lint: idle", tag=TAGS["lint_status"])
                 dpg.add_input_text(tag=TAGS["lint_output"], multiline=True, readonly=True, width=580, height=120)
     dpg.add_spacer(height=8)

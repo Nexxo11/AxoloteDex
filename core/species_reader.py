@@ -180,6 +180,15 @@ class SpeciesReader:
         species.gender_ratio = self._extract_field_raw(body, "genderRatio")
         species.catch_rate = self._extract_field_raw(body, "catchRate")
         species.exp_yield = self._extract_field_raw(body, "expYield")
+        species.cry_id = self._extract_field_raw(body, "cryId")
+        species.ev_yields = {
+            "hp": self._extract_int_field(body, "evYield_HP") or 0,
+            "attack": self._extract_int_field(body, "evYield_Attack") or 0,
+            "defense": self._extract_int_field(body, "evYield_Defense") or 0,
+            "speed": self._extract_int_field(body, "evYield_Speed") or 0,
+            "sp_attack": self._extract_int_field(body, "evYield_SpAttack") or 0,
+            "sp_defense": self._extract_int_field(body, "evYield_SpDefense") or 0,
+        }
 
         types_raw = self._extract_field_raw(body, "types")
         if types_raw:

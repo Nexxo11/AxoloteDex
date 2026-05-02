@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -59,6 +60,15 @@ class GuiActions:
         self._cached_validation = None
         self._cached_lint_ok: bool | None = None
         self._perf_stats: dict[str, list[float]] = {}
+        self._radar_drag_index: int | None = None
+        self._radar_hover_index: int | None = None
+        self._radar_mouse_was_down: bool = False
+        self._radar_last_size: tuple[float, float] = (520.0, 300.0)
+        self._radar_debug_text: str = "hover=None drag=None"
+        self._radar_drag_changed: bool = False
+        self._radar_initialized: bool = False
+        self._radar_drag_start_mouse: tuple[float, float] | None = None
+        self._radar_drag_snapshot: dict | None = None
 
     def set_button_themes(self, primary_theme: int, secondary_theme: int, disabled_theme: int | None = None) -> None:
         self._primary_button_theme = primary_theme
@@ -97,6 +107,280 @@ class GuiActions:
         bucket.append(elapsed_ms)
         if len(bucket) > 40:
             del bucket[:-40]
+
+    @staticmethod
+    def _clamped_int(value, low: int, high: int, fallback: int) -> int:
+        try:
+            n = int(value)
+        except Exception:
+            n = fallback
+        return max(low, min(high, n))
+
+    def _refresh_stats_radar(self) -> None:
+        if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            return
+
+        labels = ["hp", "attack", "defense", "speed", "sp_defense", "sp_attack"]
+        base_values = [
+            self._clamped_int(dpg.get_value(tag) if dpg.does_item_exist(tag) else 1, 1, 255, 1)
+            for tag in labels
+        ]
+        labels_text = ["HP", "Attack", "Defense", "Speed", "Sp. Def", "Sp. Atk"]
+        stat_colors = [
+            (120, 222, 120, 255),
+            (246, 118, 118, 255),
+            (120, 170, 246, 255),
+            (246, 214, 120, 255),
+            (162, 134, 246, 255),
+            (136, 232, 246, 255),
+        ]
+        n = len(base_values)
+
+        geom = self._stats_radar_geometry()
+        panel_w = geom["panel_w"]
+        panel_h = geom["panel_h"]
+        cx = geom["cx"]
+        cy = geom["cy"]
+        radius = geom["radius"]
+
+        def poly_points(values: list[int], close: bool = True) -> list[tuple[float, float]]:
+            pts: list[tuple[float, float]] = []
+            for i, val in enumerate(values):
+                angle = (2.0 * math.pi * i / n) - (math.pi / 2.0)
+                r = radius * (float(val) / 255.0)
+                pts.append((cx + (r * math.cos(angle)), cy + (r * math.sin(angle))))
+            if close and pts:
+                pts.append(pts[0])
+            return pts
+
+        draw_tag = TAGS["stats_radar_drawlist"]
+        dpg.delete_item(draw_tag, children_only=True)
+
+        ring_colors = [
+            (148, 193, 232, 50),
+            (148, 193, 232, 64),
+            (148, 193, 232, 88),
+            (210, 235, 255, 140),
+        ]
+        for idx, scale in enumerate((0.25, 0.5, 0.75, 1.0)):
+            ring_values = [int(255 * scale)] * n
+            ring_pts = poly_points(ring_values)
+            for i in range(len(ring_pts) - 1):
+                dpg.draw_line(ring_pts[i], ring_pts[i + 1], color=ring_colors[idx], thickness=1.5, parent=draw_tag)
+
+        axis_pts = poly_points([255] * n, close=False)
+        for i, p in enumerate(axis_pts):
+            dpg.draw_line((cx, cy), p, color=(178, 210, 235, 90), thickness=1.0, parent=draw_tag)
+            vx = p[0] - cx
+            vy = p[1] - cy
+            mag = math.sqrt(vx * vx + vy * vy) or 1.0
+            tx = p[0] + (vx / mag) * 18.0
+            ty = p[1] + (vy / mag) * 18.0
+            if i == 0:
+                text_pos = (cx - 7, ty - 12)
+            elif i == 1:
+                text_pos = (tx + 2, ty - 4)
+            elif i == 2:
+                text_pos = (tx + 2, ty + 2)
+            elif i == 3:
+                text_pos = (tx - 14, ty - 2)
+            elif i == 4:
+                text_pos = (tx - 58, ty + 2)
+            else:
+                text_pos = (tx - 58, ty - 6)
+            dpg.draw_text(text_pos, labels_text[i], color=stat_colors[i], size=14, parent=draw_tag)
+
+        base_pts = poly_points(base_values)
+        dpg.draw_polygon(base_pts[:-1], color=(255, 255, 255, 220), fill=(231, 215, 96, 84), thickness=2.0, parent=draw_tag)
+        for i in range(len(base_pts) - 1):
+            dpg.draw_line(base_pts[i], base_pts[i + 1], color=(255, 255, 255, 235), thickness=2.0, parent=draw_tag)
+        for i, p in enumerate(base_pts[:-1]):
+            c = stat_colors[i]
+            is_selected = self._radar_drag_index == i
+            is_hover = self._radar_hover_index == i
+            point_radius = 5.8 if is_selected else (4.6 if is_hover else 3.3)
+            border_color = (255, 255, 255, 255) if (is_selected or is_hover) else (225, 235, 245, 255)
+            dpg.draw_circle(p, point_radius, color=border_color, fill=c, thickness=1.8 if is_selected else 1.2, parent=draw_tag)
+
+        if dpg.does_item_exist(TAGS["stats_radar_panel"]):
+            dpg.draw_text((8, 8), self._radar_debug_text, color=(170, 190, 220, 190), size=12, parent=draw_tag)
+
+    def _stats_radar_geometry(self) -> dict[str, float]:
+        panel_w, panel_h = self._radar_last_size
+        cx = panel_w * 0.5
+        cy = panel_h * 0.50
+        radius = min(panel_w * 0.28, panel_h * 0.30)
+        return {"panel_w": panel_w, "panel_h": panel_h, "cx": cx, "cy": cy, "radius": radius}
+
+    @staticmethod
+    def _item_rect(tag: str) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        try:
+            state = dpg.get_item_state(tag)
+        except Exception:
+            return None
+        rect_min = state.get("rect_min")
+        rect_size = state.get("rect_size")
+        if (
+            not isinstance(rect_min, (list, tuple))
+            or not isinstance(rect_size, (list, tuple))
+            or len(rect_min) < 2
+            or len(rect_size) < 2
+        ):
+            return None
+        return (float(rect_min[0]), float(rect_min[1])), (float(rect_size[0]), float(rect_size[1]))
+
+    @staticmethod
+    def _safe_item_rect_min_size(tag: str) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        try:
+            mn = dpg.get_item_rect_min(tag)
+            sz = dpg.get_item_rect_size(tag)
+        except Exception:
+            return None
+        if not mn or not sz or len(mn) < 2 or len(sz) < 2:
+            return None
+        return (float(mn[0]), float(mn[1])), (float(sz[0]), float(sz[1]))
+
+    def _handle_stats_radar_drag(self) -> None:
+        if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            return
+        if not dpg.does_item_exist(TAGS["stats_radar_panel"]):
+            return
+        rect = self._item_rect(TAGS["stats_radar_drawlist"])
+        if rect is None:
+            rect = self._safe_item_rect_min_size(TAGS["stats_radar_drawlist"])
+        if rect is None:
+            rect = self._item_rect(TAGS["stats_radar_panel"])
+        if rect is None:
+            rect = self._safe_item_rect_min_size(TAGS["stats_radar_panel"])
+        if rect is None:
+            self._radar_debug_text = "hover=None drag=None rect=none"
+            return
+        panel_min, panel_size = rect
+        mouse_pos = dpg.get_mouse_pos()
+        panel_max = (panel_min[0] + panel_size[0], panel_min[1] + panel_size[1])
+        is_hovered = (
+            panel_size[0] > 4
+            and panel_size[1] > 4
+            and panel_min[0] <= mouse_pos[0] <= panel_max[0]
+            and panel_min[1] <= mouse_pos[1] <= panel_max[1]
+        )
+        self._radar_debug_text = (
+            f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
+            f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
+            f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
+        )
+        prev_hover = self._radar_hover_index
+        prev_drag = self._radar_drag_index
+
+        mouse_down = bool(dpg.is_mouse_button_down(0))
+        local_x = float(mouse_pos[0] - panel_min[0])
+        local_y = float(mouse_pos[1] - panel_min[1])
+
+        labels = ["hp", "attack", "defense", "speed", "sp_defense", "sp_attack"]
+        values = [self._clamped_int(dpg.get_value(tag) if dpg.does_item_exist(tag) else 1, 1, 255, 1) for tag in labels]
+        n = len(values)
+        geom = self._stats_radar_geometry()
+        cx = geom["cx"]
+        cy = geom["cy"]
+        radius = geom["radius"]
+
+        points: list[tuple[float, float]] = []
+        for i, val in enumerate(values):
+            angle = (2.0 * math.pi * i / n) - (math.pi / 2.0)
+            r = radius * (float(val) / 255.0)
+            points.append((cx + (r * math.cos(angle)), cy + (r * math.sin(angle))))
+
+        def _nearest_point_idx(mx: float, my: float, pts: list[tuple[float, float]], max_radius: float) -> int | None:
+            best_idx = None
+            best_d2 = None
+            r2 = max_radius * max_radius
+            for idx, pt in enumerate(pts):
+                dx = mx - pt[0]
+                dy = my - pt[1]
+                d2 = dx * dx + dy * dy
+                if d2 <= r2 and (best_d2 is None or d2 < best_d2):
+                    best_d2 = d2
+                    best_idx = idx
+            return best_idx
+
+        if self._radar_drag_index is None:
+            self._radar_hover_index = _nearest_point_idx(local_x, local_y, points, 34.0) if is_hovered else None
+        else:
+            self._radar_hover_index = self._radar_drag_index
+
+        if mouse_down and not self._radar_mouse_was_down and self._radar_drag_index is None and is_hovered:
+            selected = _nearest_point_idx(local_x, local_y, points, 72.0)
+            if selected is not None:
+                self._radar_drag_index = selected
+                self._radar_hover_index = selected
+                self._radar_drag_snapshot = {
+                    "panel_min": panel_min,
+                    "cx": cx,
+                    "cy": cy,
+                    "radius": radius,
+                    "n": n,
+                }
+
+        if mouse_down and self._radar_drag_index is not None and self._radar_drag_snapshot is not None:
+            snap = self._radar_drag_snapshot
+            snap_min = snap["panel_min"]
+            sx = float(mouse_pos[0] - snap_min[0])
+            sy = float(mouse_pos[1] - snap_min[1])
+            i = int(self._radar_drag_index)
+            angle = (2.0 * math.pi * i / int(snap["n"])) - (math.pi / 2.0)
+            ux = math.cos(angle)
+            uy = math.sin(angle)
+            vx = sx - float(snap["cx"])
+            vy = sy - float(snap["cy"])
+            projection = (vx * ux) + (vy * uy)
+            projection = max(0.0, min(float(snap["radius"]), projection))
+            new_value = int(round((projection / float(snap["radius"])) * 255.0))
+            new_value = max(1, min(255, new_value))
+            tag = labels[i]
+            if dpg.does_item_exist(tag) and int(dpg.get_value(tag) or 1) != new_value:
+                dpg.set_value(tag, new_value)
+                self.state.editor_data = self._read_editor_from_ui()
+                self._invalidate_payload_cache()
+                self.state.editor_dirty = True
+                self.state.validation_ok = False
+                self.state.dry_run_valid = False
+                self._status_validation = "idle"
+                self._status_dryrun = "dirty"
+                self._refresh_apply_enabled()
+                self._update_header_status()
+                self._radar_drag_changed = True
+                self._refresh_stats_radar()
+
+        if not mouse_down:
+            if self._radar_drag_changed:
+                self._radar_drag_changed = False
+                self.request_preview_refresh()
+            self._radar_drag_index = None
+            self._radar_drag_start_mouse = None
+            self._radar_drag_snapshot = None
+            self._radar_hover_index = None
+        self._radar_mouse_was_down = mouse_down
+
+        if prev_hover != self._radar_hover_index or prev_drag != self._radar_drag_index:
+            self._radar_debug_text = (
+                f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
+                f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
+                f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
+            )
+            self._refresh_stats_radar()
+        elif mouse_down and self._radar_drag_index is not None:
+            self._radar_debug_text = (
+                f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
+                f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
+                f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
+            )
+            self._refresh_stats_radar()
+
+    def on_stats_radar_clicked(self, sender=None, app_data=None, user_data=None) -> None:
+        return
+
+    def on_stats_radar_released(self, sender=None, app_data=None, user_data=None) -> None:
+        return
 
     @staticmethod
     def _payload_signature(payload: dict) -> str:
@@ -186,6 +470,8 @@ class GuiActions:
         item_file = root / "include/constants/items.h"
         moves_file = root / "include/constants/moves.h"
         tmhm_file = root / "include/constants/tms_hms.h"
+        tutor_file = root / "src/data/tutor_moves.h"
+        cries_file = root / "include/constants/cries.h"
 
         def _load_enum_tokens(path: Path, prefix: str) -> list[str]:
             out: list[str] = []
@@ -211,6 +497,7 @@ class GuiActions:
         abilities = _load_enum_tokens(ability_file, "ABILITY_")
         items = _load_enum_tokens(item_file, "ITEM_")
         moves = _load_enum_tokens(moves_file, "MOVE_")
+        cries = _load_enum_tokens(cries_file, "CRY_")
 
         tmhm_moves: list[str] = []
         if tmhm_file.exists():
@@ -218,11 +505,22 @@ class GuiActions:
             for m in re.finditer(r"F\(([_A-Z0-9]+)\)", text):
                 tmhm_moves.append(f"MOVE_{m.group(1)}")
 
+        tutor_moves: list[str] = []
+        if tutor_file.exists():
+            text = tutor_file.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r"F\(([_A-Z0-9]+)\)", text):
+                tutor_moves.append(f"MOVE_{m.group(1)}")
+            if not tutor_moves:
+                tutor_moves = sorted({m.group(0) for m in re.finditer(r"\bMOVE_[A-Z0-9_]+\b", text)})
+        tutor_moves = [m for m in tutor_moves if m != "MOVE_UNAVAILABLE"]
+
         self.state.type_options = types if types else ["TYPE_NORMAL"]
         self.state.ability_options = abilities if abilities else ["ABILITY_NONE"]
         self.state.item_options = items if items else ["ITEM_NONE"]
         self.state.move_options = moves if moves else ["MOVE_TACKLE"]
         self.state.tmhm_options = sorted(set(tmhm_moves)) if tmhm_moves else ["MOVE_TACKLE"]
+        self.state.tutor_options = sorted(set(tutor_moves)) if tutor_moves else ["MOVE_TACKLE"]
+        self.state.cry_options = cries if cries else ["CRY_NONE"]
 
         dpg.configure_item("type1", items=self.state.type_options)
         dpg.configure_item("type2", items=[""] + self.state.type_options)
@@ -233,12 +531,19 @@ class GuiActions:
         dpg.configure_item("evo_trade_item_param", items=["ITEM_NONE"] + self.state.item_options)
         dpg.configure_item("move_name", items=self.state.move_options)
         dpg.configure_item("tmhm_move", items=self.state.tmhm_options)
+        dpg.configure_item("tutor_move", items=self.state.tutor_options)
+        dpg.configure_item("cry_id", items=self.state.cry_options)
         if self.state.item_options:
             dpg.set_value("evo_item_param", self.state.item_options[0])
         if self.state.move_options:
             dpg.set_value("move_name", self.state.move_options[0])
         if self.state.tmhm_options:
             dpg.set_value("tmhm_move", self.state.tmhm_options[0])
+        if self.state.tutor_options:
+            dpg.set_value("tutor_move", self.state.tutor_options[0])
+        if self.state.cry_options:
+            current_cry = str(dpg.get_value("cry_id") or "CRY_NONE") if dpg.does_item_exist("cry_id") else "CRY_NONE"
+            dpg.set_value("cry_id", current_cry if current_cry in self.state.cry_options else self.state.cry_options[0])
 
     def _update_texture(
         self,
@@ -266,6 +571,10 @@ class GuiActions:
 
     def pump(self) -> None:
         self._apply_responsive_layout()
+        if not self._radar_initialized and dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            self._radar_initialized = True
+            self._refresh_stats_radar()
+        self._handle_stats_radar_drag()
         now = time.monotonic()
 
         if self.state.project_loaded and now - self._icon_anim_last >= self._icon_anim_interval:
@@ -332,7 +641,10 @@ class GuiActions:
         dpg.configure_item("species_name", width=editor_field_w)
         dpg.configure_item("description", width=min(560, max(360, workspace_w - 320)))
         dpg.configure_item("folder_name", width=editor_field_w)
-        dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
+        if dpg.does_item_exist("cry_id"):
+            dpg.configure_item("cry_id", width=min(420, max(280, workspace_w - 340)))
+        if dpg.does_item_exist("assets_folder"):
+            dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
         general_left_w = max(420, int(workspace_w * 0.65))
         general_right_w = max(280, workspace_w - general_left_w - 36)
         if dpg.does_item_exist(TAGS["general_left"]):
@@ -351,8 +663,14 @@ class GuiActions:
         dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item("evo_trade_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item(TAGS["evo_rows"], width=workspace_w - 30)
-        dpg.configure_item(TAGS["levelup_rows"], width=workspace_w - 30)
-        dpg.configure_item(TAGS["teachable_rows"], width=workspace_w - 30)
+        half_learnset_w = max(260, int((workspace_w - 44) / 2))
+        if dpg.does_item_exist(TAGS["learnset_level_panel"]):
+            dpg.configure_item(TAGS["learnset_level_panel"], width=half_learnset_w)
+        if dpg.does_item_exist(TAGS["learnset_tmhm_panel"]):
+            dpg.configure_item(TAGS["learnset_tmhm_panel"], width=half_learnset_w)
+        dpg.configure_item(TAGS["levelup_rows"], width=max(220, half_learnset_w - 12))
+        dpg.configure_item(TAGS["teachable_rows"], width=max(220, half_learnset_w - 12))
+        dpg.configure_item(TAGS["tutor_rows"], width=workspace_w - 30)
         dpg.configure_item(TAGS["lint_output"], width=workspace_w - 30)
 
         content_w = workspace_w - 32
@@ -360,6 +678,17 @@ class GuiActions:
         dpg.configure_item(TAGS["plan_summary"], width=content_w)
         dpg.configure_item(TAGS["plan_text"], width=content_w, height=max(260, row_h - 210))
         dpg.configure_item(TAGS["build_output"], width=content_w, height=max(260, row_h - 190))
+        stats_panel_h = max(240, int(row_h * 0.40))
+        stats_left_w = max(420, min(520, int(content_w * 0.50)))
+        stats_radar_w = max(280, content_w - stats_left_w - 12)
+        self._radar_last_size = (float(stats_radar_w), float(stats_panel_h))
+        if dpg.does_item_exist(TAGS["stats_fields_panel"]):
+            dpg.configure_item(TAGS["stats_fields_panel"], width=stats_left_w, height=stats_panel_h)
+        if dpg.does_item_exist(TAGS["stats_radar_panel"]):
+            dpg.configure_item(TAGS["stats_radar_panel"], width=stats_radar_w, height=stats_panel_h)
+        if dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            dpg.configure_item(TAGS["stats_radar_drawlist"], width=stats_radar_w, height=stats_panel_h)
+            self._refresh_stats_radar()
 
     def _next_draft_species_constant(self) -> str:
         existing = {str(item.get("constant_name", "")).upper() for item in self.state.species_list}
@@ -540,6 +869,11 @@ class GuiActions:
         if self.state.selected_teachable_index >= len(self.state.teachable_rows):
             self.state.selected_teachable_index = -1
 
+    def _render_tutor_rows(self) -> None:
+        dpg.configure_item(TAGS["tutor_rows"], items=list(self.state.tutor_rows))
+        if self.state.selected_tutor_index >= len(self.state.tutor_rows):
+            self.state.selected_tutor_index = -1
+
     def _sync_evolution_param_widget(self) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL")
         is_level = method == "EVO_LEVEL"
@@ -685,9 +1019,11 @@ class GuiActions:
             self.state.evolution_rows = []
             self.state.level_up_rows = []
             self.state.teachable_rows = []
+            self.state.tutor_rows = []
             self._render_evo_rows()
             self._render_levelup_rows()
             self._render_teachable_rows()
+            self._render_tutor_rows()
             self._sync_evolution_param_widget()
             self.state.editor_data = self._read_editor_from_ui()
             self.state.editor_dirty = False
@@ -696,6 +1032,7 @@ class GuiActions:
             self._status_validation = "idle"
             self._status_dryrun = "idle"
             self._refresh_apply_enabled()
+            self._refresh_stats_radar()
             self.request_preview_refresh()
             return
 
@@ -708,6 +1045,7 @@ class GuiActions:
         data["species_name"] = species.species_name or ""
         data["description"] = species.description or ""
         data["folder_name"] = species.folder_name or ""
+        data["cry_id"] = species.cry_id or "CRY_NONE"
         stats = species.base_stats
         data["hp"] = stats.hp or data["hp"]
         data["attack"] = stats.attack or data["attack"]
@@ -722,6 +1060,12 @@ class GuiActions:
             data["ability1"] = species.abilities[0]
             data["ability2"] = species.abilities[1] if len(species.abilities) > 1 else "ABILITY_NONE"
             data["ability_hidden"] = species.abilities[2] if len(species.abilities) > 2 else "ABILITY_NONE"
+        data["ev_hp"] = int(species.ev_yields.get("hp", 0))
+        data["ev_attack"] = int(species.ev_yields.get("attack", 0))
+        data["ev_defense"] = int(species.ev_yields.get("defense", 0))
+        data["ev_speed"] = int(species.ev_yields.get("speed", 0))
+        data["ev_sp_attack"] = int(species.ev_yields.get("sp_attack", 0))
+        data["ev_sp_defense"] = int(species.ev_yields.get("sp_defense", 0))
         self._suspend_dirty_events = True
         try:
             for key, value in data.items():
@@ -733,9 +1077,13 @@ class GuiActions:
         self.state.evolution_rows = self._parse_evo_rows(species.evolutions_raw)
         self._render_evo_rows()
         self.state.level_up_rows = list(species.level_up_moves or [])
-        self.state.teachable_rows = [m for m in (species.teachable_moves_raw or []) if m in set(self.state.tmhm_options)]
+        tmhm_set = set(self.state.tmhm_options)
+        tutor_set = set(self.state.tutor_options)
+        self.state.teachable_rows = [m for m in (species.teachable_moves_raw or []) if m in tmhm_set]
+        self.state.tutor_rows = [m for m in (species.teachable_moves_raw or []) if m in tutor_set and m not in tmhm_set]
         self._render_levelup_rows()
         self._render_teachable_rows()
+        self._render_tutor_rows()
         if dpg.does_item_exist("description"):
             dpg.set_value("description", str(species.description or ""))
         self._sync_evolution_param_widget()
@@ -746,6 +1094,7 @@ class GuiActions:
         self._status_validation = "idle"
         self._status_dryrun = "idle"
         self._refresh_apply_enabled()
+        self._refresh_stats_radar()
         self.request_preview_refresh()
 
     def _read_editor_from_ui(self) -> dict:
@@ -791,6 +1140,7 @@ class GuiActions:
             dpg.set_value(TAGS["plan_summary"], "")
         self._refresh_apply_enabled()
         self._update_header_status()
+        self._refresh_stats_radar()
         self.request_preview_refresh()
 
     def new_species(self, sender=None, app_data=None, user_data=None) -> None:
@@ -807,9 +1157,11 @@ class GuiActions:
         self.state.evolution_rows = []
         self.state.level_up_rows = []
         self.state.teachable_rows = []
+        self.state.tutor_rows = []
         self._render_evo_rows()
         self._render_levelup_rows()
         self._render_teachable_rows()
+        self._render_tutor_rows()
         self._sync_evolution_param_widget()
         if dpg.does_item_exist("evo_target"):
             dpg.set_value("evo_target", "")
@@ -882,6 +1234,36 @@ class GuiActions:
         self.state.selected_teachable_index = -1
         self._render_teachable_rows()
         self.mark_dirty()
+
+    def add_tutor_move(self, sender=None, app_data=None, user_data=None) -> None:
+        move = str(dpg.get_value("tutor_move") or "").strip()
+        if not move:
+            return
+        if move not in self.state.tutor_rows:
+            self.state.tutor_rows.append(move)
+            self._render_tutor_rows()
+            self.mark_dirty()
+
+    def remove_tutor_move(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_tutor_index
+        if idx < 0 or idx >= len(self.state.tutor_rows):
+            self._set_message("Select a tutor move to remove")
+            return
+        del self.state.tutor_rows[idx]
+        self.state.selected_tutor_index = -1
+        self._render_tutor_rows()
+        self.mark_dirty()
+
+    def select_tutor_row(self, sender=None, app_data=None, user_data=None) -> None:
+        selected = dpg.get_value(TAGS["tutor_rows"])
+        if not selected:
+            self.state.selected_tutor_index = -1
+            return
+        try:
+            self.state.selected_tutor_index = self.state.tutor_rows.index(selected)
+            dpg.set_value("tutor_move", selected)
+        except ValueError:
+            self.state.selected_tutor_index = -1
 
     def show_delete_modal(self, sender=None, app_data=None, user_data=None) -> None:
         if not self.state.selected_species_constant:
@@ -1091,9 +1473,19 @@ class GuiActions:
             "gender_ratio": str(e["gender_ratio"]).strip(),
             "catch_rate": int(e["catch_rate"]),
             "exp_yield": int(e["exp_yield"]),
+            "ev_yields": {
+                "hp": int(e["ev_hp"]),
+                "attack": int(e["ev_attack"]),
+                "defense": int(e["ev_defense"]),
+                "speed": int(e["ev_speed"]),
+                "sp_attack": int(e["ev_sp_attack"]),
+                "sp_defense": int(e["ev_sp_defense"]),
+            },
+            "cry_id": str(e.get("cry_id") or "CRY_NONE").strip() or "CRY_NONE",
             "evolutions": list(self.state.evolution_rows),
             "level_up_learnset": list(self.state.level_up_rows),
             "tmhm_learnset": list(self.state.teachable_rows),
+            "tutor_learnset": list(self.state.tutor_rows),
         }
 
     def _run_lint(self, payload: dict, validation_used_fallback: bool):

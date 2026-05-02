@@ -159,7 +159,7 @@ class SpeciesEditor:
             old_block = self._find_species_info_block(family_text, constant_name)
             if old_block is None:
                 continue
-            new_block = self._update_species_info_evolutions(old_block, data.get("evolutions", []))
+            new_block = self._update_species_info_block(old_block, data)
             if new_block != old_block:
                 plan.add_step(
                     ChangeStep(
@@ -235,17 +235,19 @@ class SpeciesEditor:
         parsed = json.loads(old_json)
         key = constant_name.replace("SPECIES_", "")
         tmhm_moves = [m for m in data.get("tmhm_learnset", []) if isinstance(m, str) and m.startswith("MOVE_")]
+        tutor_moves = [m for m in data.get("tutor_learnset", []) if isinstance(m, str) and m.startswith("MOVE_")]
+        teachable_moves = sorted(set(tmhm_moves + tutor_moves))
         existing = parsed.get(key, [])
         if not isinstance(existing, list):
             existing = []
-        keep_non_tmhm = [m for m in existing if m not in tmhm_moves]
-        parsed[key] = sorted(set(keep_non_tmhm + tmhm_moves))
+        keep_non_teachable = [m for m in existing if m not in teachable_moves]
+        parsed[key] = sorted(set(keep_non_teachable + teachable_moves))
         new_json = json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
         plan.add_step(
             ChangeStep(
                 target_file=relpath(all_learnables, self.project_root),
                 action="update",
-                reason="Actualizar fuente de verdad de learnables (TM/HM)",
+                reason="Actualizar fuente de verdad de learnables (TM/HM + Tutor)",
                 old_text=old_json,
                 new_text=new_json,
                 risk_level="high",
@@ -571,6 +573,14 @@ class SpeciesEditor:
         gender_ratio = data.get("gender_ratio", "PERCENT_FEMALE(50)")
         catch_rate = data.get("catch_rate", 45)
         exp_yield = data.get("exp_yield", 64)
+        ev = data.get("ev_yields", {}) if isinstance(data.get("ev_yields", {}), dict) else {}
+        ev_hp = int(ev.get("hp", 0))
+        ev_attack = int(ev.get("attack", 0))
+        ev_defense = int(ev.get("defense", 0))
+        ev_speed = int(ev.get("speed", 0))
+        ev_sp_attack = int(ev.get("sp_attack", 0))
+        ev_sp_defense = int(ev.get("sp_defense", 0))
+        cry_id = str(data.get("cry_id") or "CRY_NONE").strip() or "CRY_NONE"
         height = data.get("height", 10)
         weight = data.get("weight", 100)
         egg_groups = data.get("egg_groups", ["EGG_GROUP_MONSTER"])
@@ -616,6 +626,12 @@ class SpeciesEditor:
             f"        .types = {type_expr},\n"
             f"        .catchRate = {catch_rate},\n"
             f"        .expYield = {exp_yield},\n"
+            f"        .evYield_HP = {ev_hp},\n"
+            f"        .evYield_Attack = {ev_attack},\n"
+            f"        .evYield_Defense = {ev_defense},\n"
+            f"        .evYield_Speed = {ev_speed},\n"
+            f"        .evYield_SpAttack = {ev_sp_attack},\n"
+            f"        .evYield_SpDefense = {ev_sp_defense},\n"
             f"        .genderRatio = {gender_ratio},\n"
             "        .eggCycles = 20,\n"
             f"        .friendship = {friendship},\n"
@@ -625,7 +641,7 @@ class SpeciesEditor:
             f"        .bodyColor = {body_color},\n"
             f"        .noFlip = {no_flip},\n"
             f"        .speciesName = _(\"{name}\"),\n"
-            "        .cryId = CRY_NONE,\n"
+            f"        .cryId = {cry_id},\n"
             "        .natDexNum = NATIONAL_DEX_NONE,\n"
             "        .categoryName = _(\"Custom\"),\n"
             f"        .height = {height},\n"
@@ -791,21 +807,48 @@ class SpeciesEditor:
             return ""
         return f"        .evolutions = EVOLUTION({', '.join(parts)}),\n"
 
+    @staticmethod
+    def _replace_or_insert_line(block: str, field: str, value: str, before_marker: str = "        .levelUpLearnset =") -> str:
+        line = f"        .{field} = {value},\n"
+        pattern = rf"^\s*\.{re.escape(field)}\s*=\s*[^\n]*,\n"
+        if re.search(pattern, block, flags=re.MULTILINE):
+            return re.sub(pattern, line, block, count=1, flags=re.MULTILINE)
+        idx = block.find(before_marker)
+        if idx >= 0:
+            return block[:idx] + line + block[idx:]
+        close_idx = block.rfind("    },")
+        if close_idx >= 0:
+            return block[:close_idx] + line + block[close_idx:]
+        return block
+
+    @classmethod
+    def _update_species_info_block(cls, block: str, data: dict) -> str:
+        out = block
+        out = cls._replace_or_insert_line(out, "speciesName", f'_("{str(data.get("species_name", "")).replace("\\", "\\\\").replace("\"", "\\\"")}")')
+        out = cls._replace_or_insert_line(out, "height", str(int(data.get("height", 10))))
+        out = cls._replace_or_insert_line(out, "weight", str(int(data.get("weight", 100))))
+        out = cls._replace_or_insert_line(out, "catchRate", str(int(data.get("catch_rate", 45))))
+        out = cls._replace_or_insert_line(out, "expYield", str(int(data.get("exp_yield", 64))))
+        out = cls._replace_or_insert_line(out, "genderRatio", str(data.get("gender_ratio", "PERCENT_FEMALE(50)")))
+        out = cls._replace_or_insert_line(out, "cryId", str(data.get("cry_id", "CRY_NONE") or "CRY_NONE"))
+
+        ev = data.get("ev_yields", {}) if isinstance(data.get("ev_yields", {}), dict) else {}
+        out = cls._replace_or_insert_line(out, "evYield_HP", str(int(ev.get("hp", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_Attack", str(int(ev.get("attack", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_Defense", str(int(ev.get("defense", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_Speed", str(int(ev.get("speed", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_SpAttack", str(int(ev.get("sp_attack", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_SpDefense", str(int(ev.get("sp_defense", 0))))
+
+        evol_line = cls._build_evolutions_line(data.get("evolutions", []))
+        out = re.sub(r"^\s*\.evolutions\s*=\s*EVOLUTION\([^\n]*\),\n", "", out, flags=re.MULTILINE)
+        if evol_line:
+            out = cls._replace_or_insert_line(out, "evolutions", evol_line.strip().split("=", 1)[1].strip().rstrip(","))
+        return out
+
     @classmethod
     def _update_species_info_evolutions(cls, block: str, evolutions: list[dict]) -> str:
-        evol_line = cls._build_evolutions_line(evolutions)
-        out = re.sub(r"^\s*\.evolutions\s*=\s*EVOLUTION\([^\n]*\),\n", "", block, flags=re.MULTILINE)
-        out = re.sub(r"^\s*\.evolutions\s*=\s*EVOLUTION\([^\n]*\),\\n\s*\},\n", "    },\n", out, flags=re.MULTILINE)
-        if not evol_line:
-            return out
-        marker = "        .levelUpLearnset ="
-        idx = out.find(marker)
-        if idx >= 0:
-            return out[:idx] + evol_line + out[idx:]
-        close_idx = out.rfind("    },")
-        if close_idx >= 0:
-            return out[:close_idx] + evol_line + out[close_idx:]
-        return out
+        return cls._update_species_info_block(block, {"evolutions": evolutions})
 
     @staticmethod
     def _find_matching_brace(text: str, open_pos: int) -> int:

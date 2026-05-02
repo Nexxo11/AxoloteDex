@@ -77,6 +77,8 @@ class PokemonSpecies:
     gender_ratio: str | None = None
     catch_rate: str | None = None
     exp_yield: str | None = None
+    ev_yields: dict[str, int] = field(default_factory=dict)
+    cry_id: str | None = None
     egg_groups: list[str] = field(default_factory=list)
     evolutions_raw: str | None = None
     level_up_symbol: str | None = None
