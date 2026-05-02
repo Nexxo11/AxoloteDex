@@ -38,6 +38,7 @@ class GuiActions:
         self._type_texture_tags = {"type1": "tex_type1", "type2": "tex_type2"}
         self._type_picker_texture_tags: dict[str, str] = {}
         self._icon_button_theme: int | None = None
+        self._settings_button_theme: int | None = None
         self._evo_hover_index: int = -1
         self._evo_hover_texture_tag: str = "tex_front"
         self._evo_row_tags: list[str] = []
@@ -794,7 +795,53 @@ class GuiActions:
             dpg.configure_item(TAGS["type2_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
         self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
         self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
+        if dpg.does_item_exist(TAGS["settings_fab"]):
+            fab_w = 92
+            fab_h = 92
+            fab_x = max(2, viewport_w - fab_w - 6)
+            fab_y = max(2, viewport_h - fab_h - 6)
+            if dpg.does_item_exist(TAGS.get("settings_fab_window", "")):
+                dpg.configure_item(TAGS["settings_fab_window"], pos=(fab_x, fab_y), width=fab_w, height=fab_h)
+            dpg.configure_item(TAGS["settings_fab"], width=fab_w, height=fab_h)
+            self._bind_settings_button_theme(TAGS["settings_fab"])
         self._refresh_stats_radar()
+
+    def open_settings_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        modal = TAGS.get("settings_modal")
+        if modal and dpg.does_item_exist(modal):
+            dpg.configure_item(modal, show=True)
+
+    def close_settings_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        modal = TAGS.get("settings_modal")
+        if modal and dpg.does_item_exist(modal):
+            dpg.configure_item(modal, show=False)
+
+    def open_axolote_ow_adder(self, sender=None, app_data=None, user_data=None) -> None:
+        url = "https://github.com/Nexxo11/AxoloteOwAdder"
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", url])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", url])
+            else:
+                os.startfile(url)  # type: ignore[attr-defined]
+            self._set_message("Opened AxoloteOwAdder repository")
+        except Exception:
+            self._set_message("Could not open AxoloteOwAdder URL")
+
+    def _bind_settings_button_theme(self, tag: str) -> None:
+        if self._settings_button_theme is None:
+            with dpg.theme() as theme:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
+                    dpg.add_theme_color(dpg.mvThemeCol_Border, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0, category=dpg.mvThemeCat_Core)
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0, category=dpg.mvThemeCat_Core)
+            self._settings_button_theme = theme
+        if dpg.does_item_exist(tag):
+            dpg.bind_item_theme(tag, self._settings_button_theme)
 
     def _hide_evolution_hover_preview(self) -> None:
         self._evo_hover_index = -1

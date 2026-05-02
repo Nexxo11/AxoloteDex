@@ -2,5 +2,11 @@
   "last_project_path": "/home/nexxo/Documentos/Programacion/Proyectos/pokeemerald-expansion",
   "last_species_constant": "SPECIES_BULBASAUR",
   "window_width": 1908,
-  "window_height": 994
+  "window_height": 994,
+  "settings_language": "English",
+  "settings_theme": "Dark",
+  "settings_backup_auto": true,
+  "settings_backup_keep": 15,
+  "settings_notify_success": true,
+  "settings_notify_warning": true
 }

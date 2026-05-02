@@ -80,6 +80,15 @@ TAGS = {
     "editor_tabs": "editor_tabs",
     "tab_general": "tab_general",
     "description_counter": "description_counter",
+    "settings_fab": "settings_fab",
+    "settings_fab_window": "settings_fab_window",
+    "settings_modal": "settings_modal",
+    "settings_language": "settings_language",
+    "settings_theme": "settings_theme",
+    "settings_backup_auto": "settings_backup_auto",
+    "settings_backup_keep": "settings_backup_keep",
+    "settings_notify_success": "settings_notify_success",
+    "settings_notify_warning": "settings_notify_warning",
 }
 
 
@@ -97,6 +106,67 @@ def build_layout(actions) -> None:
         with dpg.group(horizontal=True, tag=TAGS["main_row"]):
             _build_species_panel(actions)
             _build_workspace_panel(actions)
+
+        with dpg.window(
+            tag=TAGS["settings_fab_window"],
+            show=True,
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
+            no_scrollbar=True,
+            no_collapse=True,
+            no_background=True,
+            no_focus_on_appearing=True,
+            width=92,
+            height=92,
+            pos=(1450, 760),
+        ):
+            dpg.add_button(
+                label="⚙",
+                tag=TAGS["settings_fab"],
+                width=92,
+                height=92,
+                callback=actions.open_settings_modal,
+            )
+            with dpg.tooltip(TAGS["settings_fab"]):
+                dpg.add_text("Settings")
+
+        with dpg.window(modal=True, show=False, autosize=True, tag=TAGS["settings_modal"], width=560, label="Settings"):
+            dpg.add_text("Language")
+            dpg.add_combo(["English", "Spanish"], default_value="English", width=240, tag=TAGS["settings_language"])
+            dpg.add_spacer(height=10)
+
+            dpg.add_text("Theme")
+            dpg.add_combo(["Dark", "Light", "System"], default_value="Dark", width=240, tag=TAGS["settings_theme"])
+            dpg.add_spacer(height=10)
+
+            dpg.add_text("Backup")
+            dpg.add_separator()
+            dpg.add_checkbox(label="Auto backup before apply", default_value=True, tag=TAGS["settings_backup_auto"])
+            dpg.add_input_int(label="Keep last backups", default_value=15, width=140, min_value=1, max_value=200, min_clamped=True, max_clamped=True, tag=TAGS["settings_backup_keep"])
+            dpg.add_spacer(height=10)
+
+            dpg.add_text("Notifications")
+            dpg.add_separator()
+            dpg.add_checkbox(label="Show success messages", default_value=True, tag=TAGS["settings_notify_success"])
+            dpg.add_checkbox(label="Show warning messages", default_value=True, tag=TAGS["settings_notify_warning"])
+            dpg.add_spacer(height=14)
+
+            dpg.add_text("Tools")
+            dpg.add_separator()
+            dpg.add_text("My other tools:")
+            dpg.add_button(label="- AxoloteOwAdder (GitHub repo)", width=280, callback=actions.open_axolote_ow_adder)
+            dpg.add_spacer(height=14)
+
+            dpg.add_text("About Me")
+            dpg.add_separator()
+            dpg.add_text("AxoloteDex")
+            dpg.add_text("Created by Nexxo")
+            dpg.add_text("Pokemon species editor for pokeemerald-expansion")
+            dpg.add_spacer(height=14)
+
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Close", width=120, callback=actions.close_settings_modal)
 
         with dpg.window(modal=True, show=False, tag=TAGS["confirm_modal"], width=440, height=160, label="Confirm changes"):
             dpg.add_text("This will modify project files. Continue?")
