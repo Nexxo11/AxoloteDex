@@ -472,8 +472,8 @@ tools/scaninc/scaninc -M build/emerald/src/AgbRfu_LinkManager.d -I include -I to
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/clear_save_data_screen.o src/clear_save_data_screen.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/clock.o src/clock.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/coins.o src/coins.c
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/confetti_util.o src/confetti_util.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/contest_ai.o src/contest_ai.c
+/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/confetti_util.o src/confetti_util.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/contest.o src/contest.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/contest_effect.o src/contest_effect.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/contest_link.o src/contest_link.c
@@ -633,12 +633,7 @@ tools/scaninc/scaninc -M build/emerald/src/AgbRfu_LinkManager.d -I include -I to
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokedex_cry_screen.o src/pokedex_cry_screen.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokedex_plus_hgss.o src/pokedex_plus_hgss.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon_animation.o src/pokemon_animation.c
-tools/gbagfx/gbagfx graphics/pokemon/puta/back.png graphics/pokemon/puta/back.4bpp
-tools/gbagfx/gbagfx graphics/pokemon/puta/footprint.png graphics/pokemon/puta/footprint.1bpp
-tools/gbagfx/gbagfx graphics/pokemon/puta/front.png graphics/pokemon/puta/front.4bpp
-tools/gbagfx/gbagfx graphics/pokemon/puta/icon.png graphics/pokemon/puta/icon.4bpp
-tools/gbagfx/gbagfx graphics/pokemon/puta/normal.pal graphics/pokemon/puta/normal.gbapal
-tools/gbagfx/gbagfx graphics/pokemon/puta/shiny.pal graphics/pokemon/puta/shiny.gbapal
+/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon.o src/pokemon.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon_icon.o src/pokemon_icon.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon_jump.o src/pokemon_jump.c
 /usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon_size_record.o src/pokemon_size_record.c
@@ -740,13 +735,10 @@ tools/preproc/preproc -s data/battle_scripts_1.s charmap.txt | arm-none-eabi-cpp
 tools/preproc/preproc -s data/event_scripts.s charmap.txt | arm-none-eabi-cpp -iquote include -Wno-trigraphs -DMODERN=1 -DTESTING=0 -DEMERALD -std=gnu17 -I include - | tools/preproc/preproc -ie data/event_scripts.s charmap.txt | arm-none-eabi-as -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym EMERALD=1 -o build/emerald/data/event_scripts.o
 tools/preproc/preproc data/map_events.s charmap.txt | arm-none-eabi-cpp -iquote include -Wno-trigraphs -DMODERN=1 -DTESTING=0 -DEMERALD -std=gnu17 -I include - | tools/preproc/preproc -ie data/map_events.s charmap.txt | arm-none-eabi-as -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym EMERALD=1 -o build/emerald/data/map_events.o
 tools/preproc/preproc -s data/mystery_gift.s charmap.txt | arm-none-eabi-cpp -iquote include -Wno-trigraphs -DMODERN=1 -DTESTING=0 -DEMERALD -std=gnu17 -I include - | tools/preproc/preproc -ie data/mystery_gift.s charmap.txt | arm-none-eabi-as -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym EMERALD=1 -o build/emerald/data/mystery_gift.o
-tools/compresSmol/compresSmol -w graphics/pokemon/puta/back.4bpp graphics/pokemon/puta/back.4bpp.smol
-tools/compresSmol/compresSmol -w graphics/pokemon/puta/front.4bpp graphics/pokemon/puta/front.4bpp.smol
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon.o src/pokemon.c
 Memory region         Used Size  Region Size  %age Used
            EWRAM:      227692 B       256 KB     86.86%
            IWRAM:       28496 B        32 KB     86.96%
-             ROM:    26344260 B        32 MB     78.51%
+             ROM:    26341472 B        32 MB     78.50%
 cd build/emerald && arm-none-eabi-ld -Map ../../pokeemerald.map --print-memory-usage --gc-sections -T ../../ld_script_modern.ld -o ../../pokeemerald.elf <objs> <libs> | cat
 tools/gbafix/gbafix pokeemerald.elf -t"POKEMON EMER" -cBPEE -m01 -r0 --silent
 arm-none-eabi-objcopy -O binary pokeemerald.elf pokeemerald.gba

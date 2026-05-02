@@ -152,7 +152,7 @@ def build_layout(actions) -> None:
 
 
 def _build_header(actions) -> None:
-    with dpg.child_window(tag=TAGS["header_panel"], width=-1, height=112, border=False, no_scrollbar=True):
+    with dpg.child_window(tag=TAGS["header_panel"], width=-1, height=124, border=False, no_scrollbar=True):
         with dpg.group(horizontal=True):
             dpg.add_text("AxoloteDex")
             dpg.add_text("by Nexxo", color=(168, 163, 184, 255))
@@ -174,9 +174,13 @@ def _build_species_panel(actions) -> None:
         dpg.add_spacer(height=4)
         dpg.add_listbox([], tag=TAGS["species_list"], width=-1, num_items=22, callback=actions.select_species)
         dpg.add_spacer(height=8)
-        dpg.add_button(label="New species", tag=TAGS["btn_new"], callback=actions.new_species, width=-1, height=36)
+        dpg.add_button(label="New species", tag=TAGS["btn_new"], callback=actions.new_species, width=-1, height=34)
+        with dpg.tooltip(TAGS["btn_new"]):
+            dpg.add_text("Create a new species entry")
         dpg.add_spacer(height=4)
-        dpg.add_button(label="Delete selected", tag=TAGS["delete_btn"], show=False, callback=actions.show_delete_modal, width=-1, height=28)
+        dpg.add_button(label="Delete selected", tag=TAGS["delete_btn"], show=False, callback=actions.show_delete_modal, width=-1, height=34)
+        with dpg.tooltip(TAGS["delete_btn"]):
+            dpg.add_text("Delete the selected species")
 
 
 def _build_workspace_panel(actions) -> None:
@@ -195,7 +199,7 @@ def _build_editor_tab(actions) -> None:
     with dpg.tab_bar(tag=TAGS["editor_tabs"]):
         with dpg.tab(label="General", tag=TAGS["tab_general"]):
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=500, border=False):
+                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=528, border=False):
                         dpg.add_text("Constant")
                         dpg.add_input_text(tag="constant_name", callback=actions.mark_dirty, width=340)
                         dpg.add_text("Display name")
@@ -204,7 +208,7 @@ def _build_editor_tab(actions) -> None:
                             dpg.add_text("Description")
                             dpg.add_spacer(width=12)
                             dpg.add_text("0/180", tag=TAGS["description_counter"], color=(168, 163, 184, 255))
-                        dpg.add_input_text(tag="description", multiline=True, height=72, callback=actions.on_description_change, width=420, always_overwrite=True)
+                        dpg.add_input_text(tag="description", multiline=True, height=84, callback=actions.on_description_change, width=420, always_overwrite=True)
                         dpg.add_text("Folder")
                         dpg.add_input_text(tag="folder_name", callback=actions.mark_dirty, width=340)
                         with dpg.group(horizontal=True):
@@ -227,7 +231,7 @@ def _build_editor_tab(actions) -> None:
                             with dpg.group():
                                 dpg.add_text("Cry ID")
                                 dpg.add_combo(["CRY_NONE"], tag="cry_id", callback=actions.mark_dirty, width=320)
-                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=500, border=False):
+                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=528, border=False):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats"):
                 with dpg.group(horizontal=True):
@@ -311,17 +315,17 @@ def _build_editor_tab(actions) -> None:
 
         with dpg.tab(label="Learnsets"):
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(tag=TAGS["learnset_level_panel"], width=430, height=255, border=False):
+                    with dpg.child_window(tag=TAGS["learnset_level_panel"], width=430, height=284, border=False):
                         dpg.add_text("Level-up moves")
                         with dpg.group(horizontal=True):
                             dpg.add_input_int(label="Level", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
                             dpg.add_combo(["MOVE_TACKLE"], label="Move", tag="move_name", width=260)
                             dpg.add_button(label="Add", callback=actions.add_levelup_move)
                             dpg.add_button(label="Remove", callback=actions.remove_levelup_move)
-                            dpg.add_button(label="↑", callback=actions.move_levelup_up)
-                            dpg.add_button(label="↓", callback=actions.move_levelup_down)
+                            dpg.add_button(label="▲", callback=actions.move_levelup_up)
+                            dpg.add_button(label="▼", callback=actions.move_levelup_down)
                         dpg.add_listbox([], tag=TAGS["levelup_rows"], width=-1, num_items=7, callback=actions.select_levelup_row)
-                    with dpg.child_window(tag=TAGS["learnset_tmhm_panel"], width=430, height=255, border=False):
+                    with dpg.child_window(tag=TAGS["learnset_tmhm_panel"], width=430, height=284, border=False):
                         dpg.add_text("TM/HM")
                         with dpg.group(horizontal=True):
                             dpg.add_combo(["MOVE_TACKLE"], label="TM/HM Move", tag="tmhm_move", width=300)

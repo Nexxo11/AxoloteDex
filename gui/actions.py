@@ -720,13 +720,13 @@ class GuiActions:
 
         if viewport_w < 1400:
             left_ratio = 0.26
-            header_h = 108
+            header_h = 120
         elif viewport_w < 1850:
             left_ratio = 0.24
-            header_h = 104
+            header_h = 116
         else:
             left_ratio = 0.22
-            header_h = 100
+            header_h = 112
 
         row_h = max(400, viewport_h - header_h - 50)
 
@@ -1786,10 +1786,10 @@ class GuiActions:
         self.state.last_errors = list(lint.errors)
         self.state.last_warnings = list(lint.warnings)
         if lint.ok:
-            dpg.set_value(TAGS["lint_status"], "✔ OK")
+            dpg.set_value(TAGS["lint_status"], "[OK]")
             dpg.configure_item(TAGS["lint_status"], color=PALETTE["success"])
         else:
-            dpg.set_value(TAGS["lint_status"], "❌ errors")
+            dpg.set_value(TAGS["lint_status"], "[ERROR] errors")
             dpg.configure_item(TAGS["lint_status"], color=PALETTE["error"])
         lines = []
         if lint.errors:
@@ -1950,7 +1950,7 @@ class GuiActions:
             self.state.build_live_output = "Starting build...\n"
             self._build_output_buffer = ["Starting build..."]
             dpg.configure_item(TAGS["build_progress"], default_value=0.05, overlay="Building...")
-            dpg.set_value(TAGS["build_status"], "⏳ Building project...")
+            dpg.set_value(TAGS["build_status"], "[RUNNING] Building project...")
             dpg.configure_item(TAGS["build_status"], color=PALETTE["warning"])
             dpg.set_value(TAGS["build_output"], self.state.build_live_output)
 
@@ -2003,7 +2003,7 @@ class GuiActions:
         self.state.last_build_warnings = result.warnings
         self.state.last_build_log_path = str(log_path)
         self.state.last_build_summary_md = summary_path.read_text(encoding="utf-8")
-        status_text = "✔ Build successful" if result.ok else "❌ Build failed"
+        status_text = "[OK] Build successful" if result.ok else "[ERROR] Build failed"
         self._status_build = "ok" if result.ok else "error"
         self._update_header_status()
         dpg.set_value(TAGS["build_status"], status_text)

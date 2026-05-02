@@ -30,6 +30,21 @@ def main() -> None:
     actions = GuiActions(state, config_path)
 
     dpg.create_context()
+    font_candidates = [
+        Path.cwd() / "gui/fonts/FiraCode-Regular.ttf",
+        Path("/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/TTF/DejaVuSans.ttf"),
+    ]
+    default_font = None
+    for font_path in font_candidates:
+        if not font_path.exists():
+            continue
+        with dpg.font_registry():
+            default_font = dpg.add_font(str(font_path), 16)
+        break
+
     with dpg.texture_registry(show=False, tag="tex_registry"):
         empty = [0.2, 0.2, 0.2, 1.0] * (32 * 32)
         dpg.add_static_texture(32, 32, empty, tag="tex_front")
@@ -39,6 +54,8 @@ def main() -> None:
         dpg.add_static_texture(32, 32, empty, tag="tex_type2")
     build_layout(actions)
     dpg.bind_theme(create_dark_theme())
+    if default_font is not None:
+        dpg.bind_font(default_font)
     primary_btn = create_primary_button_theme()
     secondary_btn = create_secondary_button_theme()
     disabled_btn = create_disabled_button_theme()
