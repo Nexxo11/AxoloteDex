@@ -68,7 +68,7 @@ def main() -> None:
 
     def apply_theme_choice(choice: str, custom_palette: dict | None = None) -> None:
         selected = str(choice or "Dark")
-        if selected == "Personalizado":
+        if selected == "Custom":
             theme = create_custom_theme(custom_palette or {})
             dpg.bind_theme(theme)
             return
@@ -107,8 +107,6 @@ def main() -> None:
     if state.project_path:
         dpg.set_value(TAGS["project_input"], state.project_path)
 
-    if dpg.does_item_exist(TAGS["settings_language"]) and isinstance(cfg.get("settings_language"), str):
-        dpg.set_value(TAGS["settings_language"], cfg["settings_language"])
     if dpg.does_item_exist(TAGS["settings_theme"]) and isinstance(cfg.get("settings_theme"), str):
         dpg.set_value(TAGS["settings_theme"], cfg["settings_theme"])
     custom_cfg = cfg.get("settings_custom_theme") if isinstance(cfg.get("settings_custom_theme"), dict) else {}
@@ -160,7 +158,6 @@ def main() -> None:
             "last_species_constant": state.selected_species_constant or "",
             "window_width": dpg.get_viewport_client_width(),
             "window_height": dpg.get_viewport_client_height(),
-            "settings_language": dpg.get_value(TAGS["settings_language"]) if dpg.does_item_exist(TAGS["settings_language"]) else "English",
             "settings_theme": dpg.get_value(TAGS["settings_theme"]) if dpg.does_item_exist(TAGS["settings_theme"]) else "Dark",
             "settings_backup_auto": bool(dpg.get_value(TAGS["settings_backup_auto"])) if dpg.does_item_exist(TAGS["settings_backup_auto"]) else True,
             "settings_backup_keep": int(dpg.get_value(TAGS["settings_backup_keep"])) if dpg.does_item_exist(TAGS["settings_backup_keep"]) else 15,

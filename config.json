@@ -1,12 +1,62 @@
 {
   "last_project_path": "/home/nexxo/Documentos/Programacion/Proyectos/pokeemerald-expansion",
-  "last_species_constant": "SPECIES_PIDGEOT",
+  "last_species_constant": "SPECIES_BULBASAUR",
   "window_width": 1908,
   "window_height": 994,
   "settings_language": "English",
-  "settings_theme": "Dark",
+  "settings_theme": "Custom",
   "settings_backup_auto": true,
   "settings_backup_keep": 15,
   "settings_notify_success": true,
-  "settings_notify_warning": true
+  "settings_notify_warning": true,
+  "settings_custom_theme": {
+    "background": [
+      12,
+      13,
+      20,
+      255
+    ],
+    "panel": [
+      17,
+      16,
+      28,
+      255
+    ],
+    "input": [
+      24,
+      26,
+      38,
+      255
+    ],
+    "border": [
+      73,
+      62,
+      116,
+      255
+    ],
+    "primary": [
+      136,
+      109,
+      219,
+      255
+    ],
+    "primary_hover": [
+      151,
+      124,
+      236,
+      255
+    ],
+    "text": [
+      232,
+      233,
+      244,
+      255
+    ],
+    "muted_text": [
+      154,
+      159,
+      183,
+      255
+    ]
+  }
 }

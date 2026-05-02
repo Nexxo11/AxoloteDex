@@ -864,19 +864,19 @@ class GuiActions:
         choice = str(app_data or dpg.get_value(TAGS.get("settings_theme", "")) or "Dark")
         custom_group = TAGS.get("settings_custom_colors_group")
         if custom_group and dpg.does_item_exist(custom_group):
-            dpg.configure_item(custom_group, show=(choice == "Personalizado"))
+            dpg.configure_item(custom_group, show=(choice == "Custom"))
         if callable(self._theme_switcher):
             self._theme_switcher(choice, self._custom_theme_palette_from_ui())
         self._persist_config({"settings_theme": choice})
-        if choice == "Personalizado":
+        if choice == "Custom":
             self._persist_custom_theme()
 
     def on_custom_theme_color_change(self, sender=None, app_data=None, user_data=None) -> None:
         theme_choice = str(dpg.get_value(TAGS.get("settings_theme", "")) or "Dark")
-        if theme_choice != "Personalizado":
+        if theme_choice != "Custom":
             return
         if callable(self._theme_switcher):
-            self._theme_switcher("Personalizado", self._custom_theme_palette_from_ui())
+            self._theme_switcher("Custom", self._custom_theme_palette_from_ui())
         self._persist_custom_theme()
 
     def open_axolote_ow_adder(self, sender=None, app_data=None, user_data=None) -> None:

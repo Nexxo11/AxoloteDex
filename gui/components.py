@@ -83,7 +83,6 @@ TAGS = {
     "settings_fab": "settings_fab",
     "settings_fab_window": "settings_fab_window",
     "settings_modal": "settings_modal",
-    "settings_language": "settings_language",
     "settings_theme": "settings_theme",
     "settings_backup_auto": "settings_backup_auto",
     "settings_backup_keep": "settings_backup_keep",
@@ -142,12 +141,8 @@ def build_layout(actions) -> None:
                 dpg.add_text("Settings")
 
         with dpg.window(modal=True, show=False, autosize=True, tag=TAGS["settings_modal"], width=560, label="Settings"):
-            dpg.add_text("Language")
-            dpg.add_combo(["English", "Spanish"], default_value="English", width=240, tag=TAGS["settings_language"])
-            dpg.add_spacer(height=10)
-
             dpg.add_text("Theme")
-            dpg.add_combo(["Dark", "Light", "System", "Personalizado"], default_value="Dark", width=240, tag=TAGS["settings_theme"], callback=actions.on_settings_theme_change)
+            dpg.add_combo(["Dark", "Light", "System", "Custom"], default_value="Dark", width=240, tag=TAGS["settings_theme"], callback=actions.on_settings_theme_change)
             with dpg.group(tag=TAGS["settings_custom_colors_group"], show=False):
                 dpg.add_spacer(height=8)
                 dpg.add_text("Custom colors")
