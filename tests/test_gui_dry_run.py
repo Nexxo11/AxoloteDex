@@ -30,6 +30,7 @@ class GuiDryRunTests(unittest.TestCase):
             dpg.add_static_texture(32, 32, empty, tag="tex_front")
             dpg.add_static_texture(32, 32, empty, tag="tex_back")
             dpg.add_static_texture(32, 32, empty, tag="tex_icon")
+            dpg.add_static_texture(32, 32, empty, tag="tex_footprint")
         build_layout(cls.actions)
 
     @classmethod

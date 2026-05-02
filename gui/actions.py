@@ -35,7 +35,7 @@ class GuiActions:
         self.editor: SpeciesEditor | None = None
         self.config_path = config_path
         self._texture_seq = 0
-        self._preview_texture_tags = {"front": "tex_front", "back": "tex_back", "icon": "tex_icon"}
+        self._preview_texture_tags = {"front": "tex_front", "back": "tex_back", "icon": "tex_icon", "footprint": "tex_footprint"}
         self._type_texture_tags = {"type1": "tex_type1", "type2": "tex_type2"}
         self._type_picker_texture_tags: dict[str, str] = {}
         self._icon_button_theme: int | None = None
@@ -811,6 +811,9 @@ class GuiActions:
             dpg.configure_item(TAGS["preview_back_img"], width=preview_size, height=preview_size)
         if dpg.does_item_exist(TAGS["preview_icon_img"]):
             dpg.configure_item(TAGS["preview_icon_img"], width=preview_size, height=preview_size)
+        if dpg.does_item_exist(TAGS["preview_footprint_img"]):
+            footprint_size = max(64, min(96, int(preview_size * 0.86)))
+            dpg.configure_item(TAGS["preview_footprint_img"], width=footprint_size, height=footprint_size)
         dpg.configure_item("evo_target", width=max(320, workspace_w - 190))
         dpg.configure_item("evo_friendship_param", width=120)
         dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
@@ -1091,21 +1094,28 @@ class GuiActions:
             icon_payload: tuple[str, int, int] | None = None
             if dpg.does_item_exist(TAGS["preview_icon_img"]):
                 icon_payload = self._update_texture("icon", preview.icon_path, icon_frame_index, palette_mode, preview.palette_variant)
+            footprint_payload: tuple[str, int, int] | None = None
+            if dpg.does_item_exist(TAGS["preview_footprint_img"]):
+                footprint_payload = self._load_footprint_texture(folder_name, assets_folder)
 
             dpg.configure_item(TAGS["preview_front_img"], texture_tag=new_front, width=fw, height=fh)
             dpg.configure_item(TAGS["preview_back_img"], texture_tag=new_back, width=bw, height=bh)
             if icon_payload is not None:
                 new_icon, iw, ih = icon_payload
                 dpg.configure_item(TAGS["preview_icon_img"], texture_tag=new_icon, width=iw, height=ih)
+            if footprint_payload is not None:
+                new_fp, fpw, fph = footprint_payload
+                dpg.configure_item(TAGS["preview_footprint_img"], texture_tag=new_fp, width=fpw, height=fph)
 
             old_tags = self._preview_texture_tags.copy()
             self._preview_texture_tags = {
                 "front": new_front,
                 "back": new_back,
                 "icon": icon_payload[0] if icon_payload is not None else self._preview_texture_tags.get("icon", "tex_icon"),
+                "footprint": footprint_payload[0] if footprint_payload is not None else self._preview_texture_tags.get("footprint", "tex_footprint"),
             }
             for old_tag in old_tags.values():
-                if old_tag in {"tex_front", "tex_back", "tex_icon"}:
+                if old_tag in {"tex_front", "tex_back", "tex_icon", "tex_footprint"}:
                     continue
                 try:
                     if dpg.does_item_exist(old_tag):
@@ -1576,6 +1586,41 @@ class GuiActions:
         desc = str(dpg.get_value("description") or "") if dpg.does_item_exist("description") else ""
         used = min(len(desc), self.MAX_DESCRIPTION_LEN)
         dpg.set_value(counter_tag, f"{used}/{self.MAX_DESCRIPTION_LEN}")
+        ratio = used / float(self.MAX_DESCRIPTION_LEN)
+        if ratio < 0.65:
+            color = PALETTE["muted_text"]
+        elif ratio < 0.85:
+            color = PALETTE["warning"]
+        else:
+            t = min(1.0, max(0.0, (ratio - 0.85) / 0.15))
+            wr, wg, wb, _ = PALETTE["warning"]
+            rr, rg, rb, _ = PALETTE["error"]
+            color = (int(wr + (rr - wr) * t), int(wg + (rg - wg) * t), int(wb + (rb - wb) * t), 255)
+        dpg.configure_item(counter_tag, color=color)
+
+    def _load_footprint_texture(self, folder_name: str, assets_folder: str) -> tuple[str, int, int]:
+        base = Path(self.state.project_path) / "graphics" / "pokemon"
+        folders: list[str] = []
+        for value in (folder_name, assets_folder):
+            key = str(value or "").strip()
+            if key and key not in folders:
+                folders.append(key)
+        if not folders:
+            folders = ["bulbasaur"]
+        for folder in folders:
+            for filename in ("footprint.png", "footprint_gba.png"):
+                candidate = base / folder / filename
+                if not candidate.exists():
+                    continue
+                with Image.open(candidate) as src:
+                    fp = self._apply_transparent_bg_from_corners(src.convert("RGBA"))
+                    fp = fp.resize((96, 96), Image.NEAREST)
+                    w, h, data = self._rgba_to_dpg_data(fp)
+                    self._texture_seq += 1
+                    tex_tag = f"tex_footprint_{self._texture_seq}"
+                    dpg.add_static_texture(w, h, data, tag=tex_tag, parent="tex_registry")
+                    return tex_tag, w, h
+        return "tex_footprint", 96, 96
 
     @classmethod
     def _normalize_description_text(cls, text: str) -> str:

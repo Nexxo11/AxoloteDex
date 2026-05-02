@@ -3,8 +3,7 @@
   "last_species_constant": "SPECIES_BULBASAUR",
   "window_width": 1908,
   "window_height": 994,
-  "settings_language": "English",
-  "settings_theme": "Custom",
+  "settings_theme": "Dark",
   "settings_backup_auto": true,
   "settings_backup_keep": 15,
   "settings_notify_success": true,
@@ -18,7 +17,7 @@
     ],
     "panel": [
       17,
-      16,
+      18,
       28,
       255
     ],

@@ -39,6 +39,7 @@ TAGS = {
     "preview_front_img": "preview_front_img",
     "preview_back_img": "preview_back_img",
     "preview_icon_img": "preview_icon_img",
+    "preview_footprint_img": "preview_footprint_img",
     "lint_status": "lint_status",
     "lint_output": "lint_output",
     "evo_rows": "evo_rows",
@@ -448,7 +449,7 @@ def _build_inline_preview_block(actions) -> None:
     with dpg.group(horizontal=True):
         dpg.add_button(label="Change Frame", tag=TAGS["preview_frame_toggle"], callback=actions.toggle_preview_frame)
     dpg.add_text("", tag=TAGS["preview_warning"], wrap=900)
-    with dpg.child_window(width=-1, height=152, border=False, no_scrollbar=True):
+    with dpg.child_window(width=-1, height=276, border=False, no_scrollbar=True):
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             dpg.add_image("tex_front", width=112, height=112, tag=TAGS["preview_front_img"])
@@ -456,6 +457,11 @@ def _build_inline_preview_block(actions) -> None:
             dpg.add_image("tex_back", width=112, height=112, tag=TAGS["preview_back_img"])
             dpg.add_spacer(width=12)
             dpg.add_image("tex_icon", width=112, height=112, tag=TAGS["preview_icon_img"])
+        dpg.add_spacer(height=12)
+        dpg.add_text("Footprint", color=(168, 163, 184, 255))
+        with dpg.group(horizontal=True):
+            dpg.add_spacer(width=8)
+            dpg.add_image("tex_footprint", width=96, height=96, tag=TAGS["preview_footprint_img"])
 
 
 def _build_plan_tab(actions) -> None:
