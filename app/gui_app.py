@@ -11,8 +11,10 @@ from gui.themes import (
     create_disabled_button_theme,
     create_dark_theme,
     create_danger_button_theme,
+    create_light_theme,
     create_primary_button_theme,
     create_secondary_button_theme,
+    detect_system_theme,
 )
 
 
@@ -59,7 +61,16 @@ def main() -> None:
         dpg.add_static_texture(32, 32, empty, tag="tex_type1")
         dpg.add_static_texture(32, 32, empty, tag="tex_type2")
     build_layout(actions)
-    dpg.bind_theme(create_dark_theme())
+    dark_theme = create_dark_theme()
+    light_theme = create_light_theme()
+
+    def apply_theme_choice(choice: str) -> None:
+        selected = str(choice or "Dark")
+        resolved = detect_system_theme() if selected == "System" else selected
+        dpg.bind_theme(light_theme if resolved == "Light" else dark_theme)
+
+    apply_theme_choice(str(cfg.get("settings_theme") or "Dark"))
+    actions.set_theme_switcher(apply_theme_choice)
     if default_font is not None:
         dpg.bind_font(default_font)
     if settings_icon_font is not None and dpg.does_item_exist(TAGS["settings_fab"]):
@@ -94,6 +105,7 @@ def main() -> None:
         dpg.set_value(TAGS["settings_language"], cfg["settings_language"])
     if dpg.does_item_exist(TAGS["settings_theme"]) and isinstance(cfg.get("settings_theme"), str):
         dpg.set_value(TAGS["settings_theme"], cfg["settings_theme"])
+        apply_theme_choice(cfg["settings_theme"])
     if dpg.does_item_exist(TAGS["settings_backup_auto"]) and isinstance(cfg.get("settings_backup_auto"), bool):
         dpg.set_value(TAGS["settings_backup_auto"], cfg["settings_backup_auto"])
     if dpg.does_item_exist(TAGS["settings_backup_keep"]) and isinstance(cfg.get("settings_backup_keep"), int):

@@ -55,6 +55,7 @@ class GuiActions:
         self._stats_radar_refresh_interval = 0.28
         self._stats_radar_last_tick = 0.0
         self._last_valid_description: str = ""
+        self._theme_switcher = None
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -96,6 +97,9 @@ class GuiActions:
         self._secondary_button_theme = secondary_theme
         self._disabled_button_theme = disabled_theme if disabled_theme is not None else secondary_theme
         self._refresh_apply_enabled()
+
+    def set_theme_switcher(self, switcher) -> None:
+        self._theme_switcher = switcher
 
     def _update_action_button_progress(self) -> None:
         if self._primary_button_theme is None or self._secondary_button_theme is None or self._disabled_button_theme is None:
@@ -815,6 +819,12 @@ class GuiActions:
         modal = TAGS.get("settings_modal")
         if modal and dpg.does_item_exist(modal):
             dpg.configure_item(modal, show=False)
+
+    def on_settings_theme_change(self, sender=None, app_data=None, user_data=None) -> None:
+        choice = str(app_data or dpg.get_value(TAGS.get("settings_theme", "")) or "Dark")
+        if callable(self._theme_switcher):
+            self._theme_switcher(choice)
+        self._persist_config({"settings_theme": choice})
 
     def open_axolote_ow_adder(self, sender=None, app_data=None, user_data=None) -> None:
         url = "https://github.com/Nexxo11/AxoloteOwAdder"

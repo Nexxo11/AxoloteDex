@@ -137,7 +137,7 @@ def build_layout(actions) -> None:
             dpg.add_spacer(height=10)
 
             dpg.add_text("Theme")
-            dpg.add_combo(["Dark", "Light", "System"], default_value="Dark", width=240, tag=TAGS["settings_theme"])
+            dpg.add_combo(["Dark", "Light", "System"], default_value="Dark", width=240, tag=TAGS["settings_theme"], callback=actions.on_settings_theme_change)
             dpg.add_spacer(height=10)
 
             dpg.add_text("Backup")
