@@ -44,6 +44,15 @@ class GuiActions:
         self._evo_hover_last_seen: float = 0.0
         self._evo_last_click_label: str = ""
         self._evo_last_click_time: float = 0.0
+        self._evo_tooltip_anim_interval = 0.38
+        self._evo_tooltip_last_tick = 0.0
+        self._evo_tooltip_frame = 0
+        self._evo_tooltip_hover_idx = -1
+        self._evo_tooltip_rows: dict[int, dict[str, str | bool]] = {}
+        self._evo_tooltip_tex_cache: dict[tuple[str, int], tuple[str, int, int]] = {}
+        self._evo_tooltip_scale_px = 192
+        self._stats_radar_refresh_interval = 0.28
+        self._stats_radar_last_tick = 0.0
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -647,6 +656,23 @@ class GuiActions:
         self._update_evolution_hover_preview()
         now = time.monotonic()
 
+        hover_idx = -1
+        for idx, meta in self._evo_tooltip_rows.items():
+            row_tag = str(meta.get("row_tag") or "")
+            if row_tag and dpg.does_item_exist(row_tag) and dpg.is_item_hovered(row_tag):
+                hover_idx = idx
+                break
+        self._evo_tooltip_hover_idx = hover_idx
+
+        if hover_idx >= 0 and now - self._evo_tooltip_last_tick >= self._evo_tooltip_anim_interval:
+            self._evo_tooltip_last_tick = now
+            self._evo_tooltip_frame = 1 - self._evo_tooltip_frame
+            self._refresh_evo_tooltip_image(hover_idx)
+
+        if self.state.project_loaded and now - self._stats_radar_last_tick >= self._stats_radar_refresh_interval:
+            self._stats_radar_last_tick = now
+            self._refresh_stats_radar()
+
         if self.state.project_loaded and now - self._icon_anim_last >= self._icon_anim_interval:
             self._icon_anim_last = now
             self._icon_anim_frame = 1 - self._icon_anim_frame
@@ -765,79 +791,53 @@ class GuiActions:
             dpg.configure_item(preview_tag, show=False)
 
     def _update_evolution_hover_preview(self) -> None:
-        preview_tag = TAGS.get("evo_hover_preview")
-        hover_img_tag = TAGS.get("evo_hover_img")
-        hover_text_tag = TAGS.get("evo_hover_text")
-        if not preview_tag or not hover_img_tag or not hover_text_tag:
+        return
+
+    @staticmethod
+    def _crop_front_frame_local(img: Image.Image, frame_index: int) -> Image.Image:
+        w, h = img.size
+        if w % 2 == 0 and w >= h * 2:
+            half = w // 2
+            return img.crop((0, 0, half, h)) if frame_index <= 0 else img.crop((half, 0, w, h))
+        if h % 2 == 0 and h >= w * 2:
+            half = h // 2
+            return img.crop((0, 0, w, half)) if frame_index <= 0 else img.crop((0, half, w, h))
+        return img
+
+    def _evo_tooltip_texture(self, folder_name: str, frame_index: int) -> tuple[str, int, int]:
+        key = (folder_name, frame_index)
+        if key in self._evo_tooltip_tex_cache:
+            return self._evo_tooltip_tex_cache[key]
+
+        tex_tag, w, h = "tex_front", self._evo_tooltip_scale_px, self._evo_tooltip_scale_px
+        try:
+            preview = resolve_preview_paths(Path(self.state.project_path), folder_name, "", palette_mode="raw")
+            with Image.open(preview.front_path) as src:
+                frame = self._crop_front_frame_local(src.convert("RGBA"), frame_index)
+                frame = frame.resize((self._evo_tooltip_scale_px, self._evo_tooltip_scale_px), Image.NEAREST)
+                frame = self._apply_transparent_bg_from_corners(frame)
+                w, h, data = self._rgba_to_dpg_data(frame)
+                self._texture_seq += 1
+                tex_tag = f"tex_evo_tip_{self._texture_seq}"
+                dpg.add_static_texture(w, h, data, tag=tex_tag, parent="tex_registry")
+        except Exception:
+            tex_tag, w, h = "tex_front", self._evo_tooltip_scale_px, self._evo_tooltip_scale_px
+
+        self._evo_tooltip_tex_cache[key] = (tex_tag, w, h)
+        return self._evo_tooltip_tex_cache[key]
+
+    def _refresh_evo_tooltip_image(self, idx: int) -> None:
+        meta = self._evo_tooltip_rows.get(idx)
+        if not meta:
             return
-        if not self.state.project_loaded or not self.editor:
-            self._hide_evolution_hover_preview()
+        img_tag = str(meta.get("img_tag") or "")
+        folder_name = str(meta.get("folder_name") or "")
+        has_second_frame = bool(meta.get("has_second_frame"))
+        if not img_tag or not dpg.does_item_exist(img_tag):
             return
-        if not dpg.does_item_exist(TAGS["evo_rows"]):
-            self._hide_evolution_hover_preview()
-            return
-        if len(self.state.evolution_rows) == 0 or len(self._evo_row_tags) == 0:
-            self._hide_evolution_hover_preview()
-            return
-        mx, my = dpg.get_mouse_pos()
-        now = time.monotonic()
-        idx = -1
-        for row_idx, row_tag in enumerate(self._evo_row_tags):
-            if dpg.does_item_exist(row_tag) and dpg.is_item_hovered(row_tag):
-                idx = row_idx
-                self._evo_hover_last_seen = now
-                break
-        if idx < 0 or idx >= len(self.state.evolution_rows):
-            if now - self._evo_hover_last_seen < 0.12:
-                return
-            self._hide_evolution_hover_preview()
-            return
-
-        row = self.state.evolution_rows[idx]
-        target = str(row.get("target") or "").strip()
-        species = self.editor.species_by_constant.get(target)
-
-        if idx != self._evo_hover_index:
-            try:
-                if species and species.folder_name:
-                    preview = resolve_preview_paths(Path(self.state.project_path), str(species.folder_name), "", palette_mode="raw")
-                    new_tag, w, h = self._update_texture("evohover", preview.front_path, 0, "raw", preview.palette_variant)
-                else:
-                    new_tag, w, h = "tex_front", 128, 128
-                if dpg.does_item_exist(hover_img_tag):
-                    dpg.configure_item(hover_img_tag, texture_tag=new_tag, width=w, height=h)
-                if dpg.does_item_exist(hover_text_tag):
-                    dpg.set_value(hover_text_tag, target or "Unknown target")
-                old = self._evo_hover_texture_tag
-                self._evo_hover_texture_tag = new_tag
-                if old not in {"tex_front", "tex_back", "tex_icon"} and dpg.does_item_exist(old):
-                    dpg.delete_item(old)
-            except Exception:
-                self._hide_evolution_hover_preview()
-                return
-            self._evo_hover_index = idx
-
-        if dpg.does_item_exist(preview_tag):
-            tooltip_w = 170
-            tooltip_h = 170
-            viewport_w = max(1, int(dpg.get_viewport_client_width()))
-            viewport_h = max(1, int(dpg.get_viewport_client_height()))
-
-            # Tooltip-style: follow cursor, flip side near viewport edge.
-            tooltip_x = int(mx + 14)
-            tooltip_y = int(my + 12)
-
-            if tooltip_x + tooltip_w > viewport_w - 6:
-                tooltip_x = int(mx - tooltip_w - 14)
-            if tooltip_x < 6:
-                tooltip_x = 6
-            if tooltip_y + tooltip_h > viewport_h - 6:
-                tooltip_y = int(my - tooltip_h - 12)
-            if tooltip_y < 6:
-                tooltip_y = 6
-            tooltip_y = max(6, min(tooltip_y, viewport_h - tooltip_h - 6))
-
-            dpg.configure_item(preview_tag, pos=(tooltip_x, tooltip_y), show=True)
+        frame_index = self._evo_tooltip_frame if has_second_frame else 0
+        tex_tag, w, h = self._evo_tooltip_texture(folder_name, frame_index)
+        dpg.configure_item(img_tag, texture_tag=tex_tag, width=w, height=h)
 
     def _next_draft_species_constant(self) -> str:
         existing = {str(item.get("constant_name", "")).upper() for item in self.state.species_list}
@@ -1002,14 +1002,55 @@ class GuiActions:
         return rows
 
     def _render_evo_rows(self) -> None:
-        items = [f"{r['method']} | {r['param']} -> {r['target']}" for r in self.state.evolution_rows]
-        dpg.configure_item(TAGS["evo_rows"], items=items)
+        if not dpg.does_item_exist(TAGS["evo_rows"]):
+            return
+        dpg.delete_item(TAGS["evo_rows"], children_only=True)
+        self._evo_row_tags = []
+        self._evo_tooltip_rows = {}
+        for idx, row in enumerate(self.state.evolution_rows):
+            label = f"{row['method']} | {row['param']} -> {row['target']}"
+            row_tag = f"evo_row_{idx}"
+            self._evo_row_tags.append(row_tag)
+            dpg.add_selectable(
+                label=label,
+                tag=row_tag,
+                parent=TAGS["evo_rows"],
+                callback=self.select_evolution_row,
+                user_data=idx,
+                default_value=(idx == self.state.selected_evolution_index),
+            )
+
+            target = str(row.get("target") or "").strip()
+            tooltip_text = target or "Unknown target"
+            img_tag = f"evo_tip_img_{idx}"
+            tex_tag, w, h = "tex_front", self._evo_tooltip_scale_px, self._evo_tooltip_scale_px
+            folder_name = ""
+            has_second_frame = False
+            if self.editor and self.state.project_loaded:
+                species = self.editor.species_by_constant.get(target)
+                if species and species.folder_name:
+                    folder_name = str(species.folder_name)
+                    try:
+                        preview = resolve_preview_paths(Path(self.state.project_path), folder_name, "", palette_mode="raw")
+                        with Image.open(preview.front_path) as src:
+                            sw, sh = src.size
+                            has_second_frame = (sw % 2 == 0 and sw >= sh * 2) or (sh % 2 == 0 and sh >= sw * 2)
+                        tex_tag, w, h = self._evo_tooltip_texture(folder_name, 0)
+                    except Exception:
+                        pass
+            with dpg.tooltip(row_tag):
+                dpg.add_text(tooltip_text)
+                dpg.add_image(tex_tag, width=w, height=h, tag=img_tag)
+
+            self._evo_tooltip_rows[idx] = {
+                "row_tag": row_tag,
+                "img_tag": img_tag,
+                "folder_name": folder_name,
+                "has_second_frame": has_second_frame,
+            }
+
         if self.state.selected_evolution_index >= len(self.state.evolution_rows):
             self.state.selected_evolution_index = -1
-        if self.state.selected_evolution_index >= 0 and self.state.selected_evolution_index < len(items):
-            dpg.set_value(TAGS["evo_rows"], items[self.state.selected_evolution_index])
-        else:
-            dpg.set_value(TAGS["evo_rows"], "")
 
     def _render_levelup_rows(self) -> None:
         items = [f"Lv {int(r['level']):>3} -> {r['move']}" for r in self.state.level_up_rows]
@@ -1103,26 +1144,34 @@ class GuiActions:
                 dpg.set_value("evo_friendship_param", 220)
 
     def select_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
-        selected = str(dpg.get_value(TAGS["evo_rows"]) or "")
-        if not selected:
+        if user_data is None:
             self.state.selected_evolution_index = -1
             return
-        for idx, row in enumerate(self.state.evolution_rows):
-            label = f"{row['method']} | {row['param']} -> {row['target']}"
-            if label != selected:
-                continue
-            self.state.selected_evolution_index = idx
-            dpg.set_value("evo_method", row["method"])
-            self._set_evolution_param_ui(row["method"], row["param"])
-            dpg.set_value("evo_target", row["target"])
-            self._sync_evolution_param_widget()
-            now = time.monotonic()
-            if self._evo_last_click_label == selected and (now - self._evo_last_click_time) <= 0.35:
-                self._jump_to_species_from_evolution_target(row["target"])
-            self._evo_last_click_label = selected
-            self._evo_last_click_time = now
+        try:
+            idx = int(user_data)
+        except Exception:
+            idx = -1
+        if idx < 0 or idx >= len(self.state.evolution_rows):
+            self.state.selected_evolution_index = -1
             return
-        self.state.selected_evolution_index = -1
+
+        self.state.selected_evolution_index = idx
+        for row_idx, row_tag in enumerate(self._evo_row_tags):
+            if dpg.does_item_exist(row_tag):
+                dpg.set_value(row_tag, row_idx == idx)
+
+        row = self.state.evolution_rows[idx]
+        dpg.set_value("evo_method", row["method"])
+        self._set_evolution_param_ui(row["method"], row["param"])
+        dpg.set_value("evo_target", row["target"])
+        self._sync_evolution_param_widget()
+
+        selected = f"{row['method']} | {row['param']} -> {row['target']}"
+        now = time.monotonic()
+        if self._evo_last_click_label == selected and (now - self._evo_last_click_time) <= 0.35:
+            self._jump_to_species_from_evolution_target(row["target"])
+        self._evo_last_click_label = selected
+        self._evo_last_click_time = now
 
     def _jump_to_species_from_evolution_target(self, target_constant: str) -> None:
         target_constant = str(target_constant or "").strip()

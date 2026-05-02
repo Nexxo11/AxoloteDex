@@ -42,6 +42,9 @@ TAGS = {
     "lint_status": "lint_status",
     "lint_output": "lint_output",
     "evo_rows": "evo_rows",
+    "evo_hover_preview": "evo_hover_preview",
+    "evo_hover_img": "evo_hover_img",
+    "evo_hover_text": "evo_hover_text",
     "levelup_rows": "levelup_rows",
     "teachable_rows": "teachable_rows",
     "tutor_rows": "tutor_rows",
@@ -130,6 +133,21 @@ def build_layout(actions) -> None:
 
         with dpg.file_dialog(directory_selector=True, show=False, callback=actions.on_select_project_path, tag=TAGS["path_dialog"], width=700, height=420):
             dpg.add_file_extension(".*")
+
+        with dpg.window(
+            tag=TAGS["evo_hover_preview"],
+            show=False,
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
+            no_scrollbar=True,
+            no_collapse=True,
+            no_focus_on_appearing=True,
+            width=170,
+            height=170,
+        ):
+            dpg.add_text("", tag=TAGS["evo_hover_text"])
+            dpg.add_image("tex_front", tag=TAGS["evo_hover_img"], width=128, height=128)
 
 
 def _build_header(actions) -> None:
@@ -285,8 +303,7 @@ def _build_editor_tab(actions) -> None:
                     dpg.add_button(label="Add", callback=actions.add_evolution_row)
                     dpg.add_button(label="Update", callback=actions.update_evolution_row)
                     dpg.add_button(label="Remove", callback=actions.remove_evolution_row)
-                dpg.add_button(label="Clear", callback=actions.clear_evolutions)
-                dpg.add_listbox([], tag=TAGS["evo_rows"], width=580, num_items=8, callback=actions.select_evolution_row)
+                dpg.add_child_window(tag=TAGS["evo_rows"], width=580, height=210, border=True)
 
         with dpg.tab(label="Learnsets"):
                 with dpg.group(horizontal=True):
