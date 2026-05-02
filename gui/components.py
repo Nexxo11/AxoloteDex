@@ -74,6 +74,8 @@ TAGS = {
     "apply_hint": "apply_hint",
     "delete_work_modal": "delete_work_modal",
     "delete_work_text": "delete_work_text",
+    "editor_tabs": "editor_tabs",
+    "tab_general": "tab_general",
 }
 
 
@@ -171,8 +173,8 @@ def _build_workspace_panel(actions) -> None:
 
 def _build_editor_tab(actions) -> None:
     dpg.add_combo(["add", "edit"], label="Mode", tag="edit_mode", default_value="add", callback=actions.mark_dirty, width=120)
-    with dpg.tab_bar():
-        with dpg.tab(label="General"):
+    with dpg.tab_bar(tag=TAGS["editor_tabs"]):
+        with dpg.tab(label="General", tag=TAGS["tab_general"]):
                 with dpg.group(horizontal=True):
                     with dpg.child_window(tag=TAGS["general_left"], width=760, height=500, border=False):
                         dpg.add_text("Constant")

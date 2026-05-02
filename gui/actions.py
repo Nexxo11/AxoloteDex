@@ -38,6 +38,12 @@ class GuiActions:
         self._type_texture_tags = {"type1": "tex_type1", "type2": "tex_type2"}
         self._type_picker_texture_tags: dict[str, str] = {}
         self._icon_button_theme: int | None = None
+        self._evo_hover_index: int = -1
+        self._evo_hover_texture_tag: str = "tex_front"
+        self._evo_row_tags: list[str] = []
+        self._evo_hover_last_seen: float = 0.0
+        self._evo_last_click_label: str = ""
+        self._evo_last_click_time: float = 0.0
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -134,6 +140,22 @@ class GuiActions:
         if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
             return
 
+        draw_tag = TAGS["stats_radar_drawlist"]
+        if not self.state.project_loaded:
+            dpg.delete_item(draw_tag, children_only=True)
+            return
+
+        rect = self._safe_item_rect_min_size(TAGS["stats_radar_drawlist"])
+        if rect is not None:
+            _, rect_size = rect
+            if float(rect_size[0]) < 260.0 or float(rect_size[1]) < 180.0:
+                dpg.delete_item(draw_tag, children_only=True)
+                return
+            self._radar_last_size = (
+                max(220.0, float(rect_size[0])),
+                max(180.0, float(rect_size[1])),
+            )
+
         labels = ["hp", "attack", "defense", "speed", "sp_defense", "sp_attack"]
         base_values = [
             self._clamped_int(dpg.get_value(tag) if dpg.does_item_exist(tag) else 1, 1, 255, 1)
@@ -167,7 +189,6 @@ class GuiActions:
                 pts.append(pts[0])
             return pts
 
-        draw_tag = TAGS["stats_radar_drawlist"]
         dpg.delete_item(draw_tag, children_only=True)
 
         ring_colors = [
@@ -623,6 +644,7 @@ class GuiActions:
         if not self._radar_initialized and dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
             self._radar_initialized = True
             self._refresh_stats_radar()
+        self._update_evolution_hover_preview()
         now = time.monotonic()
 
         if self.state.project_loaded and now - self._icon_anim_last >= self._icon_anim_interval:
@@ -711,6 +733,14 @@ class GuiActions:
         dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item("evo_trade_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item(TAGS["evo_rows"], width=workspace_w - 30)
+        stats_left_w = min(560, max(420, int(workspace_w * 0.46)))
+        stats_radar_w = max(280, workspace_w - stats_left_w - 30)
+        if dpg.does_item_exist(TAGS["stats_fields_panel"]):
+            dpg.configure_item(TAGS["stats_fields_panel"], width=stats_left_w, height=320)
+        if dpg.does_item_exist(TAGS["stats_radar_panel"]):
+            dpg.configure_item(TAGS["stats_radar_panel"], width=stats_radar_w, height=320)
+        if dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            dpg.configure_item(TAGS["stats_radar_drawlist"], width=stats_radar_w - 8, height=312)
         half_learnset_w = max(260, int((workspace_w - 44) / 2))
         if dpg.does_item_exist(TAGS["learnset_level_panel"]):
             dpg.configure_item(TAGS["learnset_level_panel"], width=half_learnset_w)
@@ -726,23 +756,88 @@ class GuiActions:
             dpg.configure_item(TAGS["type2_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
         self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
         self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
+        self._refresh_stats_radar()
 
-        content_w = workspace_w - 32
-        dpg.configure_item(TAGS["preview_warning"], wrap=max(220, general_right_w - 14))
-        dpg.configure_item(TAGS["plan_summary"], width=content_w)
-        dpg.configure_item(TAGS["plan_text"], width=content_w, height=max(260, row_h - 210))
-        dpg.configure_item(TAGS["build_output"], width=content_w, height=max(260, row_h - 190))
-        stats_panel_h = max(240, int(row_h * 0.40))
-        stats_left_w = max(420, min(520, int(content_w * 0.50)))
-        stats_radar_w = max(280, content_w - stats_left_w - 12)
-        self._radar_last_size = (float(stats_radar_w), float(stats_panel_h))
-        if dpg.does_item_exist(TAGS["stats_fields_panel"]):
-            dpg.configure_item(TAGS["stats_fields_panel"], width=stats_left_w, height=stats_panel_h)
-        if dpg.does_item_exist(TAGS["stats_radar_panel"]):
-            dpg.configure_item(TAGS["stats_radar_panel"], width=stats_radar_w, height=stats_panel_h)
-        if dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
-            dpg.configure_item(TAGS["stats_radar_drawlist"], width=stats_radar_w, height=stats_panel_h)
-            self._refresh_stats_radar()
+    def _hide_evolution_hover_preview(self) -> None:
+        self._evo_hover_index = -1
+        preview_tag = TAGS.get("evo_hover_preview")
+        if preview_tag and dpg.does_item_exist(preview_tag):
+            dpg.configure_item(preview_tag, show=False)
+
+    def _update_evolution_hover_preview(self) -> None:
+        preview_tag = TAGS.get("evo_hover_preview")
+        hover_img_tag = TAGS.get("evo_hover_img")
+        hover_text_tag = TAGS.get("evo_hover_text")
+        if not preview_tag or not hover_img_tag or not hover_text_tag:
+            return
+        if not self.state.project_loaded or not self.editor:
+            self._hide_evolution_hover_preview()
+            return
+        if not dpg.does_item_exist(TAGS["evo_rows"]):
+            self._hide_evolution_hover_preview()
+            return
+        if len(self.state.evolution_rows) == 0 or len(self._evo_row_tags) == 0:
+            self._hide_evolution_hover_preview()
+            return
+        mx, my = dpg.get_mouse_pos()
+        now = time.monotonic()
+        idx = -1
+        for row_idx, row_tag in enumerate(self._evo_row_tags):
+            if dpg.does_item_exist(row_tag) and dpg.is_item_hovered(row_tag):
+                idx = row_idx
+                self._evo_hover_last_seen = now
+                break
+        if idx < 0 or idx >= len(self.state.evolution_rows):
+            if now - self._evo_hover_last_seen < 0.12:
+                return
+            self._hide_evolution_hover_preview()
+            return
+
+        row = self.state.evolution_rows[idx]
+        target = str(row.get("target") or "").strip()
+        species = self.editor.species_by_constant.get(target)
+
+        if idx != self._evo_hover_index:
+            try:
+                if species and species.folder_name:
+                    preview = resolve_preview_paths(Path(self.state.project_path), str(species.folder_name), "", palette_mode="raw")
+                    new_tag, w, h = self._update_texture("evohover", preview.front_path, 0, "raw", preview.palette_variant)
+                else:
+                    new_tag, w, h = "tex_front", 128, 128
+                if dpg.does_item_exist(hover_img_tag):
+                    dpg.configure_item(hover_img_tag, texture_tag=new_tag, width=w, height=h)
+                if dpg.does_item_exist(hover_text_tag):
+                    dpg.set_value(hover_text_tag, target or "Unknown target")
+                old = self._evo_hover_texture_tag
+                self._evo_hover_texture_tag = new_tag
+                if old not in {"tex_front", "tex_back", "tex_icon"} and dpg.does_item_exist(old):
+                    dpg.delete_item(old)
+            except Exception:
+                self._hide_evolution_hover_preview()
+                return
+            self._evo_hover_index = idx
+
+        if dpg.does_item_exist(preview_tag):
+            tooltip_w = 170
+            tooltip_h = 170
+            viewport_w = max(1, int(dpg.get_viewport_client_width()))
+            viewport_h = max(1, int(dpg.get_viewport_client_height()))
+
+            # Tooltip-style: follow cursor, flip side near viewport edge.
+            tooltip_x = int(mx + 14)
+            tooltip_y = int(my + 12)
+
+            if tooltip_x + tooltip_w > viewport_w - 6:
+                tooltip_x = int(mx - tooltip_w - 14)
+            if tooltip_x < 6:
+                tooltip_x = 6
+            if tooltip_y + tooltip_h > viewport_h - 6:
+                tooltip_y = int(my - tooltip_h - 12)
+            if tooltip_y < 6:
+                tooltip_y = 6
+            tooltip_y = max(6, min(tooltip_y, viewport_h - tooltip_h - 6))
+
+            dpg.configure_item(preview_tag, pos=(tooltip_x, tooltip_y), show=True)
 
     def _next_draft_species_constant(self) -> str:
         existing = {str(item.get("constant_name", "")).upper() for item in self.state.species_list}
@@ -911,6 +1006,10 @@ class GuiActions:
         dpg.configure_item(TAGS["evo_rows"], items=items)
         if self.state.selected_evolution_index >= len(self.state.evolution_rows):
             self.state.selected_evolution_index = -1
+        if self.state.selected_evolution_index >= 0 and self.state.selected_evolution_index < len(items):
+            dpg.set_value(TAGS["evo_rows"], items[self.state.selected_evolution_index])
+        else:
+            dpg.set_value(TAGS["evo_rows"], "")
 
     def _render_levelup_rows(self) -> None:
         items = [f"Lv {int(r['level']):>3} -> {r['move']}" for r in self.state.level_up_rows]
@@ -1004,20 +1103,41 @@ class GuiActions:
                 dpg.set_value("evo_friendship_param", 220)
 
     def select_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
-        selected = dpg.get_value(TAGS["evo_rows"])
+        selected = str(dpg.get_value(TAGS["evo_rows"]) or "")
         if not selected:
             self.state.selected_evolution_index = -1
             return
         for idx, row in enumerate(self.state.evolution_rows):
             label = f"{row['method']} | {row['param']} -> {row['target']}"
-            if label == selected:
-                self.state.selected_evolution_index = idx
-                dpg.set_value("evo_method", row["method"])
-                self._set_evolution_param_ui(row["method"], row["param"])
-                dpg.set_value("evo_target", row["target"])
-                self._sync_evolution_param_widget()
-                return
+            if label != selected:
+                continue
+            self.state.selected_evolution_index = idx
+            dpg.set_value("evo_method", row["method"])
+            self._set_evolution_param_ui(row["method"], row["param"])
+            dpg.set_value("evo_target", row["target"])
+            self._sync_evolution_param_widget()
+            now = time.monotonic()
+            if self._evo_last_click_label == selected and (now - self._evo_last_click_time) <= 0.35:
+                self._jump_to_species_from_evolution_target(row["target"])
+            self._evo_last_click_label = selected
+            self._evo_last_click_time = now
+            return
         self.state.selected_evolution_index = -1
+
+    def _jump_to_species_from_evolution_target(self, target_constant: str) -> None:
+        target_constant = str(target_constant or "").strip()
+        if not target_constant:
+            return
+        target_item = next((x for x in self.state.species_list if x.get("constant_name") == target_constant), None)
+        if target_item is None:
+            self._set_message(f"Target species not found: {target_constant}")
+            return
+        label = self._species_label(target_item)
+        if dpg.does_item_exist(TAGS["species_list"]):
+            dpg.set_value(TAGS["species_list"], label)
+            self.select_species()
+        if dpg.does_item_exist(TAGS.get("editor_tabs", "")) and dpg.does_item_exist(TAGS.get("tab_general", "")):
+            dpg.set_value(TAGS["editor_tabs"], TAGS["tab_general"])
 
     def select_levelup_row(self, sender=None, app_data=None, user_data=None) -> None:
         selected = dpg.get_value(TAGS["levelup_rows"])
