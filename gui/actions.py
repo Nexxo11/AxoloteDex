@@ -53,6 +53,7 @@ class GuiActions:
         self._evo_tooltip_scale_px = 192
         self._stats_radar_refresh_interval = 0.28
         self._stats_radar_last_tick = 0.0
+        self._last_valid_description: str = ""
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -144,6 +145,16 @@ class GuiActions:
         if m:
             return max(0, min(100, int(m.group(1))))
         return 50
+
+    @staticmethod
+    def _int_from_raw(value: str | int | None, fallback: int) -> int:
+        if isinstance(value, int):
+            return value
+        text = str(value or "").strip()
+        m = re.match(r"^-?\d+$", text)
+        if m:
+            return int(text)
+        return fallback
 
     def _refresh_stats_radar(self) -> None:
         if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
@@ -650,6 +661,7 @@ class GuiActions:
 
     def pump(self) -> None:
         self._apply_responsive_layout()
+        self._enforce_text_limits()
         if not self._radar_initialized and dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
             self._radar_initialized = True
             self._refresh_stats_radar()
@@ -1252,6 +1264,7 @@ class GuiActions:
             self._render_teachable_rows()
             self._render_tutor_rows()
             self._sync_evolution_param_widget()
+            self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
             self.state.editor_data = self._read_editor_from_ui()
             self.state.editor_dirty = False
             self.state.validation_ok = False
@@ -1273,6 +1286,10 @@ class GuiActions:
         data["species_name"] = species.species_name or ""
         data["description"] = species.description or ""
         data["folder_name"] = species.folder_name or ""
+        data["height"] = self._int_from_raw(species.height, data["height"])
+        data["weight"] = self._int_from_raw(species.weight, data["weight"])
+        data["catch_rate"] = self._int_from_raw(species.catch_rate, data["catch_rate"])
+        data["exp_yield"] = self._int_from_raw(species.exp_yield, data["exp_yield"])
         data["gender_ratio"] = self._gender_ratio_to_percent(species.gender_ratio)
         data["cry_id"] = species.cry_id or "CRY_NONE"
         stats = species.base_stats
@@ -1315,6 +1332,7 @@ class GuiActions:
         self._render_tutor_rows()
         if dpg.does_item_exist("description"):
             dpg.set_value("description", str(species.description or ""))
+            self._last_valid_description = self._normalize_description_text(str(species.description or ""))
         self._sync_evolution_param_widget()
         self.state.editor_data = self._read_editor_from_ui()
         self.state.editor_dirty = False
@@ -1345,13 +1363,48 @@ class GuiActions:
                 finally:
                     self._suspend_dirty_events = False
         if dpg.does_item_exist("description"):
-            val = str(dpg.get_value("description") or "")
-            if len(val) > self.MAX_DESCRIPTION_LEN:
+            val = self._normalize_description_text(str(dpg.get_value("description") or ""))
+            if str(dpg.get_value("description") or "") != val:
                 self._suspend_dirty_events = True
                 try:
-                    dpg.set_value("description", val[: self.MAX_DESCRIPTION_LEN])
+                    dpg.set_value("description", val)
                 finally:
                     self._suspend_dirty_events = False
+            self._last_valid_description = val
+            self._update_description_counter()
+
+    def _update_description_counter(self) -> None:
+        counter_tag = TAGS.get("description_counter")
+        if not counter_tag or not dpg.does_item_exist(counter_tag):
+            return
+        desc = str(dpg.get_value("description") or "") if dpg.does_item_exist("description") else ""
+        used = min(len(desc), self.MAX_DESCRIPTION_LEN)
+        dpg.set_value(counter_tag, f"{used}/{self.MAX_DESCRIPTION_LEN}")
+
+    @classmethod
+    def _normalize_description_text(cls, text: str) -> str:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if len(text) > cls.MAX_DESCRIPTION_LEN:
+            return text[: cls.MAX_DESCRIPTION_LEN]
+        return text
+
+    def on_description_change(self, sender=None, app_data=None, user_data=None) -> None:
+        if self._suspend_dirty_events:
+            return
+        current = str(app_data if app_data is not None else dpg.get_value("description") or "")
+        normalized = current.replace("\r\n", "\n").replace("\r", "\n")
+        if len(normalized) > self.MAX_DESCRIPTION_LEN:
+            normalized = self._last_valid_description
+        else:
+            self._last_valid_description = normalized
+        if normalized != current:
+            self._suspend_dirty_events = True
+            try:
+                dpg.set_value("description", normalized)
+            finally:
+                self._suspend_dirty_events = False
+        self._update_description_counter()
+        self.mark_dirty()
 
     def mark_dirty(self, sender=None, app_data=None, user_data=None) -> None:
         if self._suspend_dirty_events:
@@ -1393,6 +1446,7 @@ class GuiActions:
         self._render_teachable_rows()
         self._render_tutor_rows()
         self._sync_evolution_param_widget()
+        self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
         if dpg.does_item_exist("evo_target"):
             dpg.set_value("evo_target", "")
         dpg.configure_item(TAGS["delete_btn"], show=False)

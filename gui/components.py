@@ -79,6 +79,7 @@ TAGS = {
     "delete_work_text": "delete_work_text",
     "editor_tabs": "editor_tabs",
     "tab_general": "tab_general",
+    "description_counter": "description_counter",
 }
 
 
@@ -199,8 +200,11 @@ def _build_editor_tab(actions) -> None:
                         dpg.add_input_text(tag="constant_name", callback=actions.mark_dirty, width=340)
                         dpg.add_text("Display name")
                         dpg.add_input_text(tag="species_name", callback=actions.mark_dirty, width=340)
-                        dpg.add_text("Description")
-                        dpg.add_input_text(tag="description", multiline=True, height=72, callback=actions.mark_dirty, width=420)
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Description")
+                            dpg.add_spacer(width=12)
+                            dpg.add_text("0/180", tag=TAGS["description_counter"], color=(168, 163, 184, 255))
+                        dpg.add_input_text(tag="description", multiline=True, height=72, callback=actions.on_description_change, width=420, always_overwrite=True)
                         dpg.add_text("Folder")
                         dpg.add_input_text(tag="folder_name", callback=actions.mark_dirty, width=340)
                         with dpg.group(horizontal=True):

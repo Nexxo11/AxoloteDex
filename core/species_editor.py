@@ -595,7 +595,8 @@ class SpeciesEditor:
         raw_description = str(data.get("description") or "").strip()
         if not raw_description:
             raw_description = "A custom species added by tool.\nReplace this description later."
-        description_lines = [line.replace("\\", "\\\\").replace('"', '\\"') for line in raw_description.splitlines() if line.strip()]
+        wrapped_description = self._wrap_description_lines(raw_description, self.DESCRIPTION_WRAP_COLS)
+        description_lines = [line.replace("\\", "\\\\").replace('"', '\\"') for line in wrapped_description.splitlines() if line.strip()]
         if not description_lines:
             description_lines = ["A custom species added by tool.", "Replace this description later."]
         description_expr = "\n".join(
@@ -672,6 +673,25 @@ class SpeciesEditor:
             f"{evolutions_field}"
             "    },\n"
         )
+
+    @staticmethod
+    def _wrap_description_lines(text: str, max_cols: int) -> str:
+        lines: list[str] = []
+        for src_line in str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            words = [w for w in src_line.strip().split() if w]
+            if not words:
+                lines.append("")
+                continue
+            current = words[0]
+            for word in words[1:]:
+                candidate = f"{current} {word}"
+                if len(candidate) <= max_cols:
+                    current = candidate
+                else:
+                    lines.append(current)
+                    current = word
+            lines.append(current)
+        return "\n".join(lines)
 
     @staticmethod
     def _find_species_info_block(text: str, constant_name: str) -> str | None:
@@ -1165,3 +1185,4 @@ class SpeciesEditor:
             if other_folder and other_folder == folder_key:
                 return True
         return False
+    DESCRIPTION_WRAP_COLS = 28
