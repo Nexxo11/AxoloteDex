@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -56,6 +57,8 @@ class GuiActions:
         self._stats_radar_last_tick = 0.0
         self._last_valid_description: str = ""
         self._theme_switcher = None
+        self._cry_audio_map: dict[str, Path] = {}
+        self._cry_player_proc: subprocess.Popen | None = None
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -755,7 +758,7 @@ class GuiActions:
         dpg.configure_item("description", width=min(560, max(360, workspace_w - 320)))
         dpg.configure_item("folder_name", width=editor_field_w)
         if dpg.does_item_exist("cry_id"):
-            dpg.configure_item("cry_id", width=min(420, max(280, workspace_w - 340)))
+            dpg.configure_item("cry_id", width=min(380, max(220, workspace_w - 420)))
         if dpg.does_item_exist("assets_folder"):
             dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
         general_left_w = max(420, int(workspace_w * 0.65))
@@ -838,6 +841,92 @@ class GuiActions:
             self._set_message("Opened AxoloteOwAdder repository")
         except Exception:
             self._set_message("Could not open AxoloteOwAdder URL")
+
+    @staticmethod
+    def _camel_to_upper_snake(name: str) -> str:
+        s = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", str(name or ""))
+        return s.upper()
+
+    def _load_cry_audio_map(self) -> None:
+        self._cry_audio_map = {}
+        if not self.state.project_path:
+            return
+        inc = Path(self.state.project_path) / "sound/direct_sound_data.inc"
+        if not inc.exists():
+            return
+        try:
+            text = inc.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return
+        current_symbol = ""
+        for raw in text.splitlines():
+            line = raw.strip()
+            m_sym = re.match(r"^(Cry_[A-Za-z0-9_]+)::", line)
+            if m_sym:
+                current_symbol = m_sym.group(1)
+                continue
+            if not current_symbol:
+                continue
+            m_inc = re.search(r"\.incbin\s+\"([^\"]+)\"", line)
+            if not m_inc:
+                continue
+            rel = m_inc.group(1)
+            cry_id = f"CRY_{self._camel_to_upper_snake(current_symbol.replace('Cry_', '', 1))}"
+            self._cry_audio_map[cry_id] = Path(self.state.project_path) / rel
+            current_symbol = ""
+
+    def play_selected_cry(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.project_loaded or not self.state.project_path:
+            self._set_message("Load a project first")
+            return
+        selected = str(dpg.get_value("cry_id") or "").strip()
+        if not selected or selected == "CRY_NONE":
+            self._set_message("Select a valid cry")
+            return
+        if not self._cry_audio_map:
+            self._load_cry_audio_map()
+        audio_path = self._cry_audio_map.get(selected)
+        if audio_path is None:
+            self._set_message(f"Cry sample not found for {selected}")
+            return
+        wav_path = audio_path.with_suffix(".wav")
+        play_path = wav_path if wav_path.exists() else audio_path
+        if not play_path.exists():
+            self._set_message(f"Audio file missing for {selected}")
+            return
+
+        try:
+            if self._cry_player_proc and self._cry_player_proc.poll() is None:
+                self._cry_player_proc.terminate()
+                self._cry_player_proc = None
+        except Exception:
+            self._cry_player_proc = None
+
+        cmd: list[str] | None = None
+        if play_path.suffix.lower() == ".wav":
+            if shutil.which("ffplay"):
+                cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(play_path)]
+            elif shutil.which("paplay"):
+                cmd = ["paplay", str(play_path)]
+            elif shutil.which("aplay"):
+                cmd = ["aplay", str(play_path)]
+            elif shutil.which("play"):
+                cmd = ["play", "-q", str(play_path)]
+
+        try:
+            if cmd is not None:
+                self._cry_player_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self._set_message(f"Playing {selected}")
+                return
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", str(play_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(play_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                os.startfile(str(play_path))  # type: ignore[attr-defined]
+            self._set_message(f"Opened {selected} in external player")
+        except Exception:
+            self._set_message(f"Could not play {selected}")
 
     def _bind_settings_button_theme(self, tag: str) -> None:
         if self._settings_button_theme is None:

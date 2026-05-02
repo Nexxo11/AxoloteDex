@@ -89,6 +89,7 @@ TAGS = {
     "settings_backup_keep": "settings_backup_keep",
     "settings_notify_success": "settings_notify_success",
     "settings_notify_warning": "settings_notify_warning",
+    "cry_play_btn": "cry_play_btn",
 }
 
 
@@ -300,7 +301,11 @@ def _build_editor_tab(actions) -> None:
                                 dpg.add_input_int(tag="gender_ratio", callback=actions.mark_dirty, width=140, min_value=0, max_value=100, min_clamped=True, max_clamped=True)
                             with dpg.group():
                                 dpg.add_text("Cry ID")
-                                dpg.add_combo(["CRY_NONE"], tag="cry_id", callback=actions.mark_dirty, width=320)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_combo(["CRY_NONE"], tag="cry_id", callback=actions.mark_dirty, width=320)
+                                    dpg.add_button(label="▶", tag=TAGS["cry_play_btn"], callback=actions.play_selected_cry, width=40)
+                                with dpg.tooltip(TAGS["cry_play_btn"]):
+                                    dpg.add_text("Play selected cry")
                     with dpg.child_window(tag=TAGS["general_right"], width=360, height=528, border=False):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats"):
