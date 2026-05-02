@@ -13,6 +13,7 @@ import time
 import traceback
 
 import dearpygui.dearpygui as dpg
+from PIL import Image
 
 from core.build_check import BuildResult, parse_build_output, write_build_outputs
 from gui.components import TAGS
@@ -34,6 +35,9 @@ class GuiActions:
         self.config_path = config_path
         self._texture_seq = 0
         self._preview_texture_tags = {"front": "tex_front", "back": "tex_back", "icon": "tex_icon"}
+        self._type_texture_tags = {"type1": "tex_type1", "type2": "tex_type2"}
+        self._type_picker_texture_tags: dict[str, str] = {}
+        self._icon_button_theme: int | None = None
         self._preview_throttle_seconds = 0.15
         self._last_preview_refresh = 0.0
         self._preview_pending = False
@@ -64,7 +68,7 @@ class GuiActions:
         self._radar_hover_index: int | None = None
         self._radar_mouse_was_down: bool = False
         self._radar_last_size: tuple[float, float] = (520.0, 300.0)
-        self._radar_debug_text: str = "hover=None drag=None"
+        self._radar_debug_text: str = ""
         self._radar_drag_changed: bool = False
         self._radar_initialized: bool = False
         self._radar_drag_start_mouse: tuple[float, float] | None = None
@@ -115,6 +119,16 @@ class GuiActions:
         except Exception:
             n = fallback
         return max(low, min(high, n))
+
+    @staticmethod
+    def _gender_ratio_to_percent(value: str | int | None) -> int:
+        if isinstance(value, int):
+            return max(0, min(100, value))
+        text = str(value or "").strip()
+        m = re.match(r"^PERCENT_FEMALE\((\d+)\)$", text)
+        if m:
+            return max(0, min(100, int(m.group(1))))
+        return 50
 
     def _refresh_stats_radar(self) -> None:
         if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
@@ -196,14 +210,7 @@ class GuiActions:
             dpg.draw_line(base_pts[i], base_pts[i + 1], color=(255, 255, 255, 235), thickness=2.0, parent=draw_tag)
         for i, p in enumerate(base_pts[:-1]):
             c = stat_colors[i]
-            is_selected = self._radar_drag_index == i
-            is_hover = self._radar_hover_index == i
-            point_radius = 5.8 if is_selected else (4.6 if is_hover else 3.3)
-            border_color = (255, 255, 255, 255) if (is_selected or is_hover) else (225, 235, 245, 255)
-            dpg.draw_circle(p, point_radius, color=border_color, fill=c, thickness=1.8 if is_selected else 1.2, parent=draw_tag)
-
-        if dpg.does_item_exist(TAGS["stats_radar_panel"]):
-            dpg.draw_text((8, 8), self._radar_debug_text, color=(170, 190, 220, 190), size=12, parent=draw_tag)
+            dpg.draw_circle(p, 3.3, color=(225, 235, 245, 255), fill=c, thickness=1.2, parent=draw_tag)
 
     def _stats_radar_geometry(self) -> dict[str, float]:
         panel_w, panel_h = self._radar_last_size
@@ -241,140 +248,7 @@ class GuiActions:
         return (float(mn[0]), float(mn[1])), (float(sz[0]), float(sz[1]))
 
     def _handle_stats_radar_drag(self) -> None:
-        if not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
-            return
-        if not dpg.does_item_exist(TAGS["stats_radar_panel"]):
-            return
-        rect = self._item_rect(TAGS["stats_radar_drawlist"])
-        if rect is None:
-            rect = self._safe_item_rect_min_size(TAGS["stats_radar_drawlist"])
-        if rect is None:
-            rect = self._item_rect(TAGS["stats_radar_panel"])
-        if rect is None:
-            rect = self._safe_item_rect_min_size(TAGS["stats_radar_panel"])
-        if rect is None:
-            self._radar_debug_text = "hover=None drag=None rect=none"
-            return
-        panel_min, panel_size = rect
-        mouse_pos = dpg.get_mouse_pos()
-        panel_max = (panel_min[0] + panel_size[0], panel_min[1] + panel_size[1])
-        is_hovered = (
-            panel_size[0] > 4
-            and panel_size[1] > 4
-            and panel_min[0] <= mouse_pos[0] <= panel_max[0]
-            and panel_min[1] <= mouse_pos[1] <= panel_max[1]
-        )
-        self._radar_debug_text = (
-            f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
-            f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
-            f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
-        )
-        prev_hover = self._radar_hover_index
-        prev_drag = self._radar_drag_index
-
-        mouse_down = bool(dpg.is_mouse_button_down(0))
-        local_x = float(mouse_pos[0] - panel_min[0])
-        local_y = float(mouse_pos[1] - panel_min[1])
-
-        labels = ["hp", "attack", "defense", "speed", "sp_defense", "sp_attack"]
-        values = [self._clamped_int(dpg.get_value(tag) if dpg.does_item_exist(tag) else 1, 1, 255, 1) for tag in labels]
-        n = len(values)
-        geom = self._stats_radar_geometry()
-        cx = geom["cx"]
-        cy = geom["cy"]
-        radius = geom["radius"]
-
-        points: list[tuple[float, float]] = []
-        for i, val in enumerate(values):
-            angle = (2.0 * math.pi * i / n) - (math.pi / 2.0)
-            r = radius * (float(val) / 255.0)
-            points.append((cx + (r * math.cos(angle)), cy + (r * math.sin(angle))))
-
-        def _nearest_point_idx(mx: float, my: float, pts: list[tuple[float, float]], max_radius: float) -> int | None:
-            best_idx = None
-            best_d2 = None
-            r2 = max_radius * max_radius
-            for idx, pt in enumerate(pts):
-                dx = mx - pt[0]
-                dy = my - pt[1]
-                d2 = dx * dx + dy * dy
-                if d2 <= r2 and (best_d2 is None or d2 < best_d2):
-                    best_d2 = d2
-                    best_idx = idx
-            return best_idx
-
-        if self._radar_drag_index is None:
-            self._radar_hover_index = _nearest_point_idx(local_x, local_y, points, 34.0) if is_hovered else None
-        else:
-            self._radar_hover_index = self._radar_drag_index
-
-        if mouse_down and not self._radar_mouse_was_down and self._radar_drag_index is None and is_hovered:
-            selected = _nearest_point_idx(local_x, local_y, points, 72.0)
-            if selected is not None:
-                self._radar_drag_index = selected
-                self._radar_hover_index = selected
-                self._radar_drag_snapshot = {
-                    "panel_min": panel_min,
-                    "cx": cx,
-                    "cy": cy,
-                    "radius": radius,
-                    "n": n,
-                }
-
-        if mouse_down and self._radar_drag_index is not None and self._radar_drag_snapshot is not None:
-            snap = self._radar_drag_snapshot
-            snap_min = snap["panel_min"]
-            sx = float(mouse_pos[0] - snap_min[0])
-            sy = float(mouse_pos[1] - snap_min[1])
-            i = int(self._radar_drag_index)
-            angle = (2.0 * math.pi * i / int(snap["n"])) - (math.pi / 2.0)
-            ux = math.cos(angle)
-            uy = math.sin(angle)
-            vx = sx - float(snap["cx"])
-            vy = sy - float(snap["cy"])
-            projection = (vx * ux) + (vy * uy)
-            projection = max(0.0, min(float(snap["radius"]), projection))
-            new_value = int(round((projection / float(snap["radius"])) * 255.0))
-            new_value = max(1, min(255, new_value))
-            tag = labels[i]
-            if dpg.does_item_exist(tag) and int(dpg.get_value(tag) or 1) != new_value:
-                dpg.set_value(tag, new_value)
-                self.state.editor_data = self._read_editor_from_ui()
-                self._invalidate_payload_cache()
-                self.state.editor_dirty = True
-                self.state.validation_ok = False
-                self.state.dry_run_valid = False
-                self._status_validation = "idle"
-                self._status_dryrun = "dirty"
-                self._refresh_apply_enabled()
-                self._update_header_status()
-                self._radar_drag_changed = True
-                self._refresh_stats_radar()
-
-        if not mouse_down:
-            if self._radar_drag_changed:
-                self._radar_drag_changed = False
-                self.request_preview_refresh()
-            self._radar_drag_index = None
-            self._radar_drag_start_mouse = None
-            self._radar_drag_snapshot = None
-            self._radar_hover_index = None
-        self._radar_mouse_was_down = mouse_down
-
-        if prev_hover != self._radar_hover_index or prev_drag != self._radar_drag_index:
-            self._radar_debug_text = (
-                f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
-                f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
-                f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
-            )
-            self._refresh_stats_radar()
-        elif mouse_down and self._radar_drag_index is not None:
-            self._radar_debug_text = (
-                f"hover={self._radar_hover_index} drag={self._radar_drag_index} "
-                f"in={is_hovered} mx={int(mouse_pos[0])},{int(mouse_pos[1])} "
-                f"rect={int(panel_min[0])},{int(panel_min[1])} {int(panel_size[0])}x{int(panel_size[1])}"
-            )
-            self._refresh_stats_radar()
+        return
 
     def on_stats_radar_clicked(self, sender=None, app_data=None, user_data=None) -> None:
         return
@@ -544,6 +418,8 @@ class GuiActions:
         if self.state.cry_options:
             current_cry = str(dpg.get_value("cry_id") or "CRY_NONE") if dpg.does_item_exist("cry_id") else "CRY_NONE"
             dpg.set_value("cry_id", current_cry if current_cry in self.state.cry_options else self.state.cry_options[0])
+        self._rebuild_type_icon_pickers()
+        self._refresh_type_icons()
 
     def _update_texture(
         self,
@@ -566,6 +442,179 @@ class GuiActions:
         dpg.add_static_texture(w, h, data, tag=tag, parent="tex_registry")
         return tag, w, h
 
+    @staticmethod
+    def _transparent_texture(size: int = 32) -> tuple[int, int, list[float]]:
+        return size, size, [0.0, 0.0, 0.0, 0.0] * (size * size)
+
+    @staticmethod
+    def _empty_type_slot_texture(width: int = 64, height: int = 32) -> tuple[int, int, list[float]]:
+        r, g, b, a = 0.28, 0.30, 0.34, 1.0
+        return width, height, [r, g, b, a] * (width * height)
+
+    @staticmethod
+    def _rgba_to_dpg_data(img: Image.Image) -> tuple[int, int, list[float]]:
+        rgba = img.convert("RGBA")
+        w, h = rgba.size
+        raw = rgba.tobytes()
+        data: list[float] = []
+        for i in range(0, len(raw), 4):
+            data.extend([raw[i] / 255.0, raw[i + 1] / 255.0, raw[i + 2] / 255.0, raw[i + 3] / 255.0])
+        return w, h, data
+
+    @staticmethod
+    def _apply_transparent_bg_from_corners(img: Image.Image) -> Image.Image:
+        rgba = img.convert("RGBA")
+        w, h = rgba.size
+        px = rgba.load()
+        key_colors = {
+            px[0, 0][:3],
+            px[max(0, w - 1), 0][:3],
+            px[0, max(0, h - 1)][:3],
+            px[max(0, w - 1), max(0, h - 1)][:3],
+        }
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if (r, g, b) in key_colors:
+                    px[x, y] = (r, g, b, 0)
+        return rgba
+
+    def _type_icon_from_sheet(self, type_token: str | None) -> tuple[int, int, list[float]]:
+        if not self.state.project_loaded or not type_token:
+            return self._transparent_texture()
+        token = str(type_token).strip()
+        if not token:
+            return self._transparent_texture()
+        # Coordinates from expansion menu_info.png (cell size: 32x16)
+        type_coord_map = {
+            "TYPE_NORMAL": (0, 16),
+            "TYPE_FIRE": (32, 16),
+            "TYPE_WATER": (64, 16),
+            "TYPE_GRASS": (96, 16),
+            "TYPE_ELECTRIC": (0, 32),
+            "TYPE_ROCK": (32, 32),
+            "TYPE_GROUND": (64, 32),
+            "TYPE_ICE": (96, 32),
+            "TYPE_FLYING": (0, 48),
+            "TYPE_FIGHTING": (32, 48),
+            "TYPE_GHOST": (64, 48),
+            "TYPE_BUG": (96, 48),
+            "TYPE_POISON": (0, 64),
+            "TYPE_PSYCHIC": (32, 64),
+            "TYPE_STEEL": (64, 64),
+            "TYPE_DARK": (96, 64),
+            "TYPE_DRAGON": (0, 80),
+            "TYPE_FAIRY": (32, 0),
+            "TYPE_NONE": (64, 64),
+            "TYPE_MYSTERY": (64, 64),
+            "TYPE_STELLAR": (64, 64),
+        }
+        if token in {"TYPE_NONE", "TYPE_MYSTERY", "TYPE_STELLAR"}:
+            return self._transparent_texture()
+        coords = type_coord_map.get(token)
+        if coords is None:
+            return self._transparent_texture()
+        root = Path(self.state.project_path)
+        menu_info = root / "graphics/interface/menu_info.png"
+        if not menu_info.exists():
+            return self._transparent_texture()
+
+        frame_w = 32
+        frame_h = 16
+        with Image.open(menu_info) as sheet:
+            x, y = coords
+            if x + frame_w > sheet.width or y + frame_h > sheet.height:
+                return self._transparent_texture()
+            icon = sheet.crop((x, y, x + frame_w, y + frame_h))
+            icon = self._apply_transparent_bg_from_corners(icon)
+            icon = icon.resize((64, 32), Image.NEAREST)
+            return self._rgba_to_dpg_data(icon)
+
+    def _refresh_type_icons(self) -> None:
+        slots = [("type1", TAGS["type1_icon_btn"], "tex_type1"), ("type2", TAGS["type2_icon_btn"], "tex_type2")]
+        for slot, img_tag, fallback_tag in slots:
+            if not dpg.does_item_exist(img_tag):
+                continue
+            token = str(dpg.get_value(slot) or "").strip() if dpg.does_item_exist(slot) else ""
+            dpg.configure_item(img_tag, show=True)
+            if token in {"", "TYPE_NONE", "TYPE_MYSTERY", "TYPE_STELLAR"}:
+                w, h, data = self._empty_type_slot_texture()
+            else:
+                w, h, data = self._type_icon_from_sheet(token)
+            self._texture_seq += 1
+            tex_tag = f"tex_{slot}_{self._texture_seq}"
+            dpg.add_static_texture(w, h, data, tag=tex_tag, parent="tex_registry")
+            dpg.configure_item(img_tag, texture_tag=tex_tag, width=w, height=h)
+            self._bind_flat_icon_theme(img_tag)
+            old = self._type_texture_tags.get(slot, fallback_tag)
+            self._type_texture_tags[slot] = tex_tag
+            if old not in {"tex_type1", "tex_type2"} and dpg.does_item_exist(old):
+                dpg.delete_item(old)
+
+    def _bind_flat_icon_theme(self, item_tag: str) -> None:
+        if self._icon_button_theme is None:
+            with dpg.theme() as self._icon_button_theme:
+                with dpg.theme_component(dpg.mvImageButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (0, 0, 0, 0))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (0, 0, 0, 0))
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0)
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
+        if dpg.does_item_exist(item_tag):
+            dpg.bind_item_theme(item_tag, self._icon_button_theme)
+
+    def _rebuild_type_icon_pickers(self) -> None:
+        for container_tag, slot, include_empty in [
+            (TAGS["type1_list"], "type1", False),
+            (TAGS["type2_list"], "type2", True),
+        ]:
+            if not dpg.does_item_exist(container_tag):
+                continue
+            dpg.delete_item(container_tag, children_only=True)
+            tokens = [t for t in self.state.type_options if t.startswith("TYPE_")]
+            if include_empty:
+                tokens = [""] + tokens
+            for token in tokens:
+                with dpg.group(horizontal=True, parent=container_tag):
+                    if token == "":
+                        dpg.add_button(label="None", width=80, height=32, callback=self._on_type_icon_pick, user_data={"slot": slot, "type": ""})
+                    else:
+                        w, h, data = self._type_icon_from_sheet(token)
+                        self._texture_seq += 1
+                        tex_tag = f"tex_picker_{slot}_{self._texture_seq}"
+                        dpg.add_static_texture(w, h, data, tag=tex_tag, parent="tex_registry")
+                        self._type_picker_texture_tags[tex_tag] = token
+                        btn_tag = dpg.add_image_button(texture_tag=tex_tag, width=64, height=32, callback=self._on_type_icon_pick, user_data={"slot": slot, "type": token})
+                        self._bind_flat_icon_theme(btn_tag)
+                    dpg.add_spacer(width=8)
+                    dpg.add_text(token if token else "(no secondary type)")
+
+    def _on_type_icon_pick(self, sender=None, app_data=None, user_data=None) -> None:
+        if not isinstance(user_data, dict):
+            return
+        slot = str(user_data.get("slot") or "")
+        token = str(user_data.get("type") or "")
+        if slot not in {"type1", "type2"}:
+            return
+        if dpg.does_item_exist(slot):
+            dpg.set_value(slot, token)
+        self.close_type_modals()
+        self.on_type_change()
+
+    def open_type1_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        if dpg.does_item_exist(TAGS["type1_modal"]):
+            dpg.configure_item(TAGS["type1_modal"], show=True)
+
+    def open_type2_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        if dpg.does_item_exist(TAGS["type2_modal"]):
+            dpg.configure_item(TAGS["type2_modal"], show=True)
+
+    def close_type_modals(self, sender=None, app_data=None, user_data=None) -> None:
+        if dpg.does_item_exist(TAGS["type1_modal"]):
+            dpg.configure_item(TAGS["type1_modal"], show=False)
+        if dpg.does_item_exist(TAGS["type2_modal"]):
+            dpg.configure_item(TAGS["type2_modal"], show=False)
+
     def request_preview_refresh(self) -> None:
         self._preview_pending = True
 
@@ -574,7 +623,6 @@ class GuiActions:
         if not self._radar_initialized and dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
             self._radar_initialized = True
             self._refresh_stats_radar()
-        self._handle_stats_radar_drag()
         now = time.monotonic()
 
         if self.state.project_loaded and now - self._icon_anim_last >= self._icon_anim_interval:
@@ -672,6 +720,12 @@ class GuiActions:
         dpg.configure_item(TAGS["teachable_rows"], width=max(220, half_learnset_w - 12))
         dpg.configure_item(TAGS["tutor_rows"], width=workspace_w - 30)
         dpg.configure_item(TAGS["lint_output"], width=workspace_w - 30)
+        if dpg.does_item_exist(TAGS["type1_list"]):
+            dpg.configure_item(TAGS["type1_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
+        if dpg.does_item_exist(TAGS["type2_list"]):
+            dpg.configure_item(TAGS["type2_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
+        self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
+        self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
 
         content_w = workspace_w - 32
         dpg.configure_item(TAGS["preview_warning"], wrap=max(220, general_right_w - 14))
@@ -908,6 +962,10 @@ class GuiActions:
         self._sync_evolution_param_widget()
         self.mark_dirty()
 
+    def on_type_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_type_icons()
+        self.mark_dirty()
+
     def on_evolution_item_change(self, sender=None, app_data=None, user_data=None) -> None:
         dpg.set_value("evo_param", str(dpg.get_value("evo_item_param") or "ITEM_NONE"))
         self.mark_dirty()
@@ -1032,6 +1090,7 @@ class GuiActions:
             self._status_validation = "idle"
             self._status_dryrun = "idle"
             self._refresh_apply_enabled()
+            self._refresh_type_icons()
             self._refresh_stats_radar()
             self.request_preview_refresh()
             return
@@ -1045,6 +1104,7 @@ class GuiActions:
         data["species_name"] = species.species_name or ""
         data["description"] = species.description or ""
         data["folder_name"] = species.folder_name or ""
+        data["gender_ratio"] = self._gender_ratio_to_percent(species.gender_ratio)
         data["cry_id"] = species.cry_id or "CRY_NONE"
         stats = species.base_stats
         data["hp"] = stats.hp or data["hp"]
@@ -1094,6 +1154,7 @@ class GuiActions:
         self._status_validation = "idle"
         self._status_dryrun = "idle"
         self._refresh_apply_enabled()
+        self._refresh_type_icons()
         self._refresh_stats_radar()
         self.request_preview_refresh()
 
@@ -1175,6 +1236,7 @@ class GuiActions:
         self.state.validation_ok = False
         self._status_validation = "idle"
         self.state.selected_species_constant = data["constant_name"]
+        self._refresh_type_icons()
         self.mark_dirty()
 
     def add_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:
@@ -1470,7 +1532,7 @@ class GuiActions:
             "abilities": abilities,
             "height": int(e["height"]),
             "weight": int(e["weight"]),
-            "gender_ratio": str(e["gender_ratio"]).strip(),
+            "gender_ratio": f"PERCENT_FEMALE({self._clamped_int(e.get('gender_ratio', 50), 0, 100, 50)})",
             "catch_rate": int(e["catch_rate"]),
             "exp_yield": int(e["exp_yield"]),
             "ev_yields": {

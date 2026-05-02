@@ -50,7 +50,16 @@ TAGS = {
     "stats_radar_panel": "stats_radar_panel",
     "stats_radar_drawlist": "stats_radar_drawlist",
     "stats_fields_panel": "stats_fields_panel",
-    "stats_radar_handlers": "stats_radar_handlers",
+    "type1_icon": "type1_icon",
+    "type2_icon": "type2_icon",
+    "type1_icon_btn": "type1_icon_btn",
+    "type2_icon_btn": "type2_icon_btn",
+    "type1_picker": "type1_picker",
+    "type2_picker": "type2_picker",
+    "type1_modal": "type1_modal",
+    "type2_modal": "type2_modal",
+    "type1_list": "type1_list",
+    "type2_list": "type2_list",
     "path_dialog": "path_dialog",
     "delete_replace_trainers_random": "delete_replace_trainers_random",
     "compat_status": "compat_status",
@@ -165,18 +174,36 @@ def _build_editor_tab(actions) -> None:
     with dpg.tab_bar():
         with dpg.tab(label="General"):
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=430, border=False):
-                        dpg.add_input_text(label="Constant", tag="constant_name", callback=actions.mark_dirty, width=340)
-                        dpg.add_input_text(label="Display name", tag="species_name", callback=actions.mark_dirty, width=340)
-                        dpg.add_input_text(label="Description", tag="description", multiline=True, height=72, callback=actions.mark_dirty, width=420)
-                        dpg.add_input_text(label="Folder", tag="folder_name", callback=actions.mark_dirty, width=340)
-                        dpg.add_input_int(label="Height", tag="height", callback=actions.mark_dirty, width=120)
-                        dpg.add_input_int(label="Weight", tag="weight", callback=actions.mark_dirty, width=120)
-                        dpg.add_input_text(label="Gender ratio", tag="gender_ratio", callback=actions.mark_dirty, width=260)
-                        dpg.add_input_int(label="Catch rate", tag="catch_rate", callback=actions.mark_dirty, width=120)
-                        dpg.add_input_int(label="Exp yield", tag="exp_yield", callback=actions.mark_dirty, width=120)
-                        dpg.add_combo(["CRY_NONE"], label="Cry ID", tag="cry_id", callback=actions.mark_dirty, width=320)
-                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=430, border=False):
+                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=500, border=False):
+                        dpg.add_text("Constant")
+                        dpg.add_input_text(tag="constant_name", callback=actions.mark_dirty, width=340)
+                        dpg.add_text("Display name")
+                        dpg.add_input_text(tag="species_name", callback=actions.mark_dirty, width=340)
+                        dpg.add_text("Description")
+                        dpg.add_input_text(tag="description", multiline=True, height=72, callback=actions.mark_dirty, width=420)
+                        dpg.add_text("Folder")
+                        dpg.add_input_text(tag="folder_name", callback=actions.mark_dirty, width=340)
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Height")
+                                dpg.add_input_int(tag="height", callback=actions.mark_dirty, width=120)
+                            with dpg.group():
+                                dpg.add_text("Weight")
+                                dpg.add_input_int(tag="weight", callback=actions.mark_dirty, width=120)
+                            with dpg.group():
+                                dpg.add_text("Catch rate")
+                                dpg.add_input_int(tag="catch_rate", callback=actions.mark_dirty, width=120)
+                            with dpg.group():
+                                dpg.add_text("Exp yield")
+                                dpg.add_input_int(tag="exp_yield", callback=actions.mark_dirty, width=120)
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                dpg.add_text("Female ratio (%)")
+                                dpg.add_input_int(tag="gender_ratio", callback=actions.mark_dirty, width=140, min_value=0, max_value=100, min_clamped=True, max_clamped=True)
+                            with dpg.group():
+                                dpg.add_text("Cry ID")
+                                dpg.add_combo(["CRY_NONE"], tag="cry_id", callback=actions.mark_dirty, width=320)
+                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=500, border=False):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats"):
                 with dpg.group(horizontal=True):
@@ -224,12 +251,25 @@ def _build_editor_tab(actions) -> None:
                                     dpg.add_input_int(tag="ev_sp_defense", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
                     with dpg.child_window(tag=TAGS["stats_radar_panel"], border=False, width=-1, height=320, no_scrollbar=True):
                         dpg.add_drawlist(tag=TAGS["stats_radar_drawlist"], width=-1, height=-1)
-        with dpg.tab(label="Tipos/Habilidades"):
-                dpg.add_combo(["TYPE_NORMAL"], label="Type 1", tag="type1", callback=actions.mark_dirty, width=280)
-                dpg.add_combo([""], label="Type 2", tag="type2", callback=actions.mark_dirty, width=280)
+        with dpg.tab(label="Types & Abilities"):
+                dpg.add_text("Types:")
+                with dpg.group(horizontal=True):
+                    dpg.add_image_button("tex_type1", tag=TAGS["type1_icon_btn"], width=64, height=32, callback=actions.open_type1_modal)
+                    dpg.add_spacer(width=8)
+                    dpg.add_image_button("tex_type2", tag=TAGS["type2_icon_btn"], width=64, height=32, callback=actions.open_type2_modal)
+                dpg.add_combo(["TYPE_NORMAL"], tag="type1", callback=actions.on_type_change, width=280, show=False)
+                dpg.add_combo([""], tag="type2", callback=actions.on_type_change, width=280, show=False)
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 1", tag="ability1", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Ability 2", tag="ability2", callback=actions.mark_dirty, width=280)
                 dpg.add_combo(["ABILITY_NONE"], label="Hidden", tag="ability_hidden", callback=actions.mark_dirty, width=280)
+                with dpg.window(modal=True, show=False, tag=TAGS["type1_modal"], width=360, height=560, label="Select primary type"):
+                    with dpg.child_window(tag=TAGS["type1_list"], width=-1, height=470, border=False):
+                        pass
+                    dpg.add_button(label="Close", callback=actions.close_type_modals, width=120)
+                with dpg.window(modal=True, show=False, tag=TAGS["type2_modal"], width=360, height=560, label="Select secondary type"):
+                    with dpg.child_window(tag=TAGS["type2_list"], width=-1, height=470, border=False):
+                        pass
+                    dpg.add_button(label="Close", callback=actions.close_type_modals, width=120)
         with dpg.tab(label="Evolutions"):
                 with dpg.group(horizontal=True):
                     dpg.add_combo(["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"], label="Method", tag="evo_method", width=170, callback=actions.on_evolution_method_change)

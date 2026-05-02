@@ -35,6 +35,8 @@ def main() -> None:
         dpg.add_static_texture(32, 32, empty, tag="tex_front")
         dpg.add_static_texture(32, 32, empty, tag="tex_back")
         dpg.add_static_texture(32, 32, empty, tag="tex_icon")
+        dpg.add_static_texture(32, 32, empty, tag="tex_type1")
+        dpg.add_static_texture(32, 32, empty, tag="tex_type2")
     build_layout(actions)
     dpg.bind_theme(create_dark_theme())
     primary_btn = create_primary_button_theme()

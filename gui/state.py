@@ -69,7 +69,7 @@ def default_editor_data() -> dict[str, Any]:
         "ability_hidden": "ABILITY_NONE",
         "height": 10,
         "weight": 100,
-        "gender_ratio": "PERCENT_FEMALE(50)",
+        "gender_ratio": 50,
         "catch_rate": 45,
         "exp_yield": 64,
         "ev_hp": 0,
