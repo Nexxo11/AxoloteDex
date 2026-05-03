@@ -177,7 +177,8 @@ class SpeciesEditor:
             plan.warnings.append(f"No se encontró bloque de species info para {constant_name}")
 
         new_folder = str(data.get("folder_name", "")).strip()
-        if new_folder:
+        current_folder = str(species.folder_name or "").strip()
+        if new_folder and new_folder != current_folder:
             graphics_h = self.project_root / "src/data/graphics/pokemon.h"
             graphics_text = graphics_h.read_text(encoding="utf-8")
             internal = self._pascal_from_constant(constant_name)
@@ -241,28 +242,31 @@ class SpeciesEditor:
         if not isinstance(existing, list):
             existing = []
         keep_non_teachable = [m for m in existing if m not in teachable_moves]
-        parsed[key] = sorted(set(keep_non_teachable + teachable_moves))
-        new_json = json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
-        plan.add_step(
-            ChangeStep(
-                target_file=relpath(all_learnables, self.project_root),
-                action="update",
-                reason="Actualizar fuente de verdad de learnables (TM/HM + Tutor)",
-                old_text=old_json,
-                new_text=new_json,
-                risk_level="high",
+        new_value = sorted(set(keep_non_teachable + teachable_moves))
+        old_value = existing if isinstance(existing, list) else []
+        if new_value != old_value:
+            parsed[key] = new_value
+            new_json = json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
+            plan.add_step(
+                ChangeStep(
+                    target_file=relpath(all_learnables, self.project_root),
+                    action="update",
+                    reason="Actualizar fuente de verdad de learnables (TM/HM + Tutor)",
+                    old_text=old_json,
+                    new_text=new_json,
+                    risk_level="high",
+                )
             )
-        )
 
-        plan.add_step(
-            ChangeStep(
-                target_file="tools/learnset_helpers/make_teachables.py",
-                action="run_script",
-                reason="Regenerar teachable_learnsets.h desde all_learnables.json",
-                new_text="__RUN_TEACHABLES_REGEN__",
-                risk_level="medium",
+            plan.add_step(
+                ChangeStep(
+                    target_file="tools/learnset_helpers/make_teachables.py",
+                    action="run_script",
+                    reason="Regenerar teachable_learnsets.h desde all_learnables.json",
+                    new_text="__RUN_TEACHABLES_REGEN__",
+                    risk_level="medium",
+                )
             )
-        )
         return plan
 
     def _build_delete_plan(self, plan: ChangePlan, data: dict, species_h: Path, graphics_h: Path) -> ChangePlan:
@@ -779,14 +783,44 @@ class SpeciesEditor:
     def _build_graphics_block(self, data: dict) -> str:
         internal = self._pascal_from_constant(data["constant_name"])
         folder = data["folder_name"]
+        asset_dir = self.project_root / "graphics/pokemon" / str(folder)
+
+        def _pick(preferred: list[str], fallback: str) -> str:
+            for name in preferred:
+                if (asset_dir / name).exists():
+                    return name
+            return fallback
+
+        front_name = _pick(["anim_front.4bpp.smol", "front.4bpp.smol"], "front.4bpp.smol")
+        back_name = _pick(["back.4bpp.smol", "anim_back.4bpp.smol"], "back.4bpp.smol")
+        front_gba_name = _pick(["anim_front_gba.4bpp.smol", "front_gba.4bpp.smol", front_name], front_name)
+        back_gba_name = _pick(["back_gba.4bpp.smol", "anim_back_gba.4bpp.smol", back_name], back_name)
+        icon_name = _pick(["icon.4bpp"], "icon.4bpp")
+        icon_gba_name = _pick(["icon_gba.4bpp", icon_name], icon_name)
+        normal_pal = _pick(["normal.gbapal"], "normal.gbapal")
+        shiny_pal = _pick(["shiny.gbapal"], "shiny.gbapal")
+        normal_gba_pal = _pick(["normal_gba.gbapal", normal_pal], normal_pal)
+        shiny_gba_pal = _pick(["shiny_gba.gbapal", shiny_pal], shiny_pal)
+        footprint_name = _pick(["footprint.1bpp"], "footprint.1bpp")
         return (
-            f"\n    const u32 gMonFrontPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/front.4bpp.smol\");\n"
-            f"    const u16 gMonPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/normal.gbapal\");\n"
-            f"    const u32 gMonBackPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/back.4bpp.smol\");\n"
-            f"    const u16 gMonShinyPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/shiny.gbapal\");\n"
-            f"    const u8 gMonIcon_{internal}[] = INCBIN_U8(\"graphics/pokemon/{folder}/icon.4bpp\");\n"
+            "\n#if !P_GBA_STYLE_SPECIES_GFX\n"
+            f"    const u32 gMonFrontPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/{front_name}\");\n"
+            f"    const u16 gMonPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/{normal_pal}\");\n"
+            f"    const u32 gMonBackPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/{back_name}\");\n"
+            f"    const u16 gMonShinyPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/{shiny_pal}\");\n"
+            "#else\n"
+            f"    const u32 gMonFrontPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/{front_gba_name}\");\n"
+            f"    const u16 gMonPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/{normal_gba_pal}\");\n"
+            f"    const u32 gMonBackPic_{internal}[] = INCBIN_U32(\"graphics/pokemon/{folder}/{back_gba_name}\");\n"
+            f"    const u16 gMonShinyPalette_{internal}[] = INCBIN_U16(\"graphics/pokemon/{folder}/{shiny_gba_pal}\");\n"
+            "#endif //P_GBA_STYLE_SPECIES_GFX\n"
+            "#if !P_GBA_STYLE_SPECIES_ICONS\n"
+            f"    const u8 gMonIcon_{internal}[] = INCBIN_U8(\"graphics/pokemon/{folder}/{icon_name}\");\n"
+            "#else\n"
+            f"    const u8 gMonIcon_{internal}[] = INCBIN_U8(\"graphics/pokemon/{folder}/{icon_gba_name}\");\n"
+            "#endif //P_GBA_STYLE_SPECIES_ICONS\n"
             "#if P_FOOTPRINTS\n"
-            f"    const u8 gMonFootprint_{internal}[] = INCBIN_U8(\"graphics/pokemon/{folder}/footprint.1bpp\");\n"
+            f"    const u8 gMonFootprint_{internal}[] = INCBIN_U8(\"graphics/pokemon/{folder}/{footprint_name}\");\n"
             "#endif //P_FOOTPRINTS\n"
         )
 
@@ -828,11 +862,19 @@ class SpeciesEditor:
         return f"        .evolutions = EVOLUTION({', '.join(parts)}),\n"
 
     @staticmethod
-    def _replace_or_insert_line(block: str, field: str, value: str, before_marker: str = "        .levelUpLearnset =") -> str:
+    def _replace_or_insert_line(
+        block: str,
+        field: str,
+        value: str,
+        before_marker: str = "        .levelUpLearnset =",
+        allow_insert: bool = True,
+    ) -> str:
         line = f"        .{field} = {value},\n"
         pattern = rf"^\s*\.{re.escape(field)}\s*=\s*[^\n]*,\n"
         if re.search(pattern, block, flags=re.MULTILINE):
             return re.sub(pattern, line, block, count=1, flags=re.MULTILINE)
+        if not allow_insert:
+            return block
         idx = block.find(before_marker)
         if idx >= 0:
             return block[:idx] + line + block[idx:]
@@ -841,24 +883,37 @@ class SpeciesEditor:
             return block[:close_idx] + line + block[close_idx:]
         return block
 
+    @staticmethod
+    def _get_field_expr(block: str, field: str) -> str | None:
+        m = re.search(rf"^\s*\.{re.escape(field)}\s*=\s*([^\n,]+)\s*,\s*$", block, flags=re.MULTILINE)
+        return m.group(1).strip() if m else None
+
     @classmethod
     def _update_species_info_block(cls, block: str, data: dict) -> str:
         out = block
+        old_exp = cls._get_field_expr(out, "expYield") or ""
+        old_gender = cls._get_field_expr(out, "genderRatio") or ""
         out = cls._replace_or_insert_line(out, "speciesName", f'_("{str(data.get("species_name", "")).replace("\\", "\\\\").replace("\"", "\\\"")}")')
         out = cls._replace_or_insert_line(out, "height", str(int(data.get("height", 10))))
         out = cls._replace_or_insert_line(out, "weight", str(int(data.get("weight", 100))))
         out = cls._replace_or_insert_line(out, "catchRate", str(int(data.get("catch_rate", 45))))
-        out = cls._replace_or_insert_line(out, "expYield", str(int(data.get("exp_yield", 64))))
-        out = cls._replace_or_insert_line(out, "genderRatio", str(data.get("gender_ratio", "PERCENT_FEMALE(50)")))
+        new_exp = str(int(data.get("exp_yield", 64)))
+        if old_exp and not re.fullmatch(r"\d+", old_exp) and new_exp == "64":
+            new_exp = old_exp
+        out = cls._replace_or_insert_line(out, "expYield", new_exp)
+        new_gender = str(data.get("gender_ratio", "PERCENT_FEMALE(50)"))
+        if old_gender.startswith("PERCENT_FEMALE(") and new_gender == "PERCENT_FEMALE(50)":
+            new_gender = old_gender
+        out = cls._replace_or_insert_line(out, "genderRatio", new_gender)
         out = cls._replace_or_insert_line(out, "cryId", str(data.get("cry_id", "CRY_NONE") or "CRY_NONE"))
 
         ev = data.get("ev_yields", {}) if isinstance(data.get("ev_yields", {}), dict) else {}
-        out = cls._replace_or_insert_line(out, "evYield_HP", str(int(ev.get("hp", 0))))
-        out = cls._replace_or_insert_line(out, "evYield_Attack", str(int(ev.get("attack", 0))))
-        out = cls._replace_or_insert_line(out, "evYield_Defense", str(int(ev.get("defense", 0))))
-        out = cls._replace_or_insert_line(out, "evYield_Speed", str(int(ev.get("speed", 0))))
-        out = cls._replace_or_insert_line(out, "evYield_SpAttack", str(int(ev.get("sp_attack", 0))))
-        out = cls._replace_or_insert_line(out, "evYield_SpDefense", str(int(ev.get("sp_defense", 0))))
+        out = cls._replace_or_insert_line(out, "evYield_HP", str(int(ev.get("hp", 0))), allow_insert=False)
+        out = cls._replace_or_insert_line(out, "evYield_Attack", str(int(ev.get("attack", 0))), allow_insert=False)
+        out = cls._replace_or_insert_line(out, "evYield_Defense", str(int(ev.get("defense", 0))), allow_insert=False)
+        out = cls._replace_or_insert_line(out, "evYield_Speed", str(int(ev.get("speed", 0))), allow_insert=False)
+        out = cls._replace_or_insert_line(out, "evYield_SpAttack", str(int(ev.get("sp_attack", 0))), allow_insert=False)
+        out = cls._replace_or_insert_line(out, "evYield_SpDefense", str(int(ev.get("sp_defense", 0))), allow_insert=False)
 
         evol_line = cls._build_evolutions_line(data.get("evolutions", []))
         out = re.sub(r"^\s*\.evolutions\s*=\s*EVOLUTION\([^\n]*\),\n", "", out, flags=re.MULTILINE)
