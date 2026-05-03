@@ -33,11 +33,16 @@ class GuiState:
     ability_options: list[str] = field(default_factory=list)
     item_options: list[str] = field(default_factory=list)
     move_options: list[str] = field(default_factory=list)
+    map_options: list[str] = field(default_factory=list)
+    nature_options: list[str] = field(default_factory=list)
     tmhm_options: list[str] = field(default_factory=list)
     tutor_options: list[str] = field(default_factory=list)
     cry_options: list[str] = field(default_factory=list)
+    condition_options: list[str] = field(default_factory=list)
     evolution_rows: list[dict[str, str]] = field(default_factory=list)
     selected_evolution_index: int = -1
+    evolution_condition_rows: list[dict[str, str]] = field(default_factory=list)
+    selected_evolution_condition_index: int = -1
     level_up_rows: list[dict[str, int | str]] = field(default_factory=list)
     selected_level_up_index: int = -1
     teachable_rows: list[str] = field(default_factory=list)

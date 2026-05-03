@@ -1,61 +1,61 @@
 {
   "last_project_path": "/home/nexxo/Documentos/Programacion/Proyectos/pokeemerald-expansion",
-  "last_species_constant": "SPECIES_PILOSWINE",
+  "last_species_constant": "SPECIES_WARTORTLE",
   "window_width": 1908,
   "window_height": 994,
-  "settings_theme": "Dark",
+  "settings_theme": "Custom",
   "settings_backup_auto": true,
   "settings_backup_keep": 15,
   "settings_notify_success": true,
   "settings_notify_warning": true,
   "settings_custom_theme": {
     "background": [
-      36.0,
-      214.0,
-      140.0,
-      255.0
+      0,
+      0,
+      0,
+      255
     ],
     "panel": [
-      17.0,
-      18.0,
-      28.0,
-      255.0
+      17,
+      18,
+      28,
+      255
     ],
     "input": [
-      24.0,
-      26.0,
-      38.0,
-      255.0
+      24,
+      26,
+      38,
+      255
     ],
     "border": [
-      73.0,
-      62.0,
-      116.0,
-      255.0
+      73,
+      62,
+      116,
+      255
     ],
     "primary": [
-      136.0,
-      109.0,
-      219.0,
-      255.0
+      136,
+      109,
+      219,
+      255
     ],
     "primary_hover": [
-      151.0,
-      124.0,
-      236.0,
-      255.0
+      151,
+      124,
+      236,
+      255
     ],
     "text": [
-      232.0,
-      233.0,
-      244.0,
-      255.0
+      232,
+      233,
+      244,
+      255
     ],
     "muted_text": [
-      154.0,
-      159.0,
-      183.0,
-      255.0
+      154,
+      159,
+      183,
+      255
     ]
   }
 }

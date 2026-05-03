@@ -430,6 +430,8 @@ class GuiActions:
         ability_file = root / "include/constants/abilities.h"
         item_file = root / "include/constants/items.h"
         moves_file = root / "include/constants/moves.h"
+        map_groups_file = root / "include/constants/map_groups.h"
+        region_map_file = root / "include/constants/region_map_sections.h"
         tmhm_file = root / "include/constants/tms_hms.h"
         tutor_file = root / "src/data/tutor_moves.h"
         cries_file = root / "include/constants/cries.h"
@@ -458,7 +460,14 @@ class GuiActions:
         abilities = _load_enum_tokens(ability_file, "ABILITY_")
         items = _load_enum_tokens(item_file, "ITEM_")
         moves = _load_enum_tokens(moves_file, "MOVE_")
+        maps = _load_enum_tokens(map_groups_file, "MAP_")
+        if not maps:
+            maps = _load_enum_tokens(region_map_file, "MAPSEC_")
+        natures = _load_enum_tokens(type_file, "NATURE_")
         cries = _load_enum_tokens(cries_file, "CRY_")
+        evo_methods = _load_enum_tokens(type_file, "EVO_")
+        condition_tokens = _load_enum_tokens(type_file, "IF_")
+        evo_methods = _load_enum_tokens(type_file, "EVO_")
 
         tmhm_moves: list[str] = []
         if tmhm_file.exists():
@@ -479,9 +488,12 @@ class GuiActions:
         self.state.ability_options = abilities if abilities else ["ABILITY_NONE"]
         self.state.item_options = items if items else ["ITEM_NONE"]
         self.state.move_options = moves if moves else ["MOVE_TACKLE"]
+        self.state.map_options = maps if maps else ["MAP_NONE"]
+        self.state.nature_options = natures if natures else ["NATURE_HARDY"]
         self.state.tmhm_options = sorted(set(tmhm_moves)) if tmhm_moves else ["MOVE_TACKLE"]
         self.state.tutor_options = sorted(set(tutor_moves)) if tutor_moves else ["MOVE_TACKLE"]
         self.state.cry_options = cries if cries else ["CRY_NONE"]
+        self.state.condition_options = condition_tokens if condition_tokens else ["IF_KNOWS_MOVE"]
 
         dpg.configure_item("type1", items=self.state.type_options)
         dpg.configure_item("type2", items=[""] + self.state.type_options)
@@ -494,6 +506,19 @@ class GuiActions:
         dpg.configure_item("tmhm_move", items=self.state.tmhm_options)
         dpg.configure_item("tutor_move", items=self.state.tutor_options)
         dpg.configure_item("cry_id", items=self.state.cry_options)
+        if dpg.does_item_exist("evo_method"):
+            items = evo_methods if evo_methods else ["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"]
+            dpg.configure_item("evo_method", items=items)
+        if dpg.does_item_exist("evo_condition_type"):
+            dpg.configure_item("evo_condition_type", items=self.state.condition_options)
+        if dpg.does_item_exist("evo_condition_value"):
+            dpg.configure_item("evo_condition_value", items=self.state.move_options)
+        if dpg.does_item_exist("evo_method"):
+            evo_items = evo_methods if evo_methods else ["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"]
+            dpg.configure_item("evo_method", items=evo_items)
+            current_method = str(dpg.get_value("evo_method") or "")
+            if current_method not in evo_items:
+                dpg.set_value("evo_method", evo_items[0])
         if self.state.item_options:
             dpg.set_value("evo_item_param", self.state.item_options[0])
         if self.state.move_options:
@@ -715,7 +740,7 @@ class GuiActions:
         now = time.monotonic()
 
         hover_idx = -1
-        for idx, meta in self._evo_tooltip_rows.items():
+        for idx, meta in list(self._evo_tooltip_rows.items()):
             row_tag = str(meta.get("row_tag") or "")
             if row_tag and dpg.does_item_exist(row_tag) and dpg.is_item_hovered(row_tag):
                 hover_idx = idx
@@ -1219,10 +1244,45 @@ class GuiActions:
     def _parse_evo_rows(self, evolutions_raw: str | None) -> list[dict[str, str]]:
         if not evolutions_raw:
             return []
+        text = str(evolutions_raw)
         rows: list[dict[str, str]] = []
-        for m in re.finditer(r"\{\s*([^,}]+)\s*,\s*([^,}]+)\s*,\s*([^}]+)\}", evolutions_raw):
-            rows.append({"method": m.group(1).strip(), "param": m.group(2).strip(), "target": m.group(3).strip()})
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] != "{":
+                i += 1
+                continue
+            i += 1
+            depth_paren = 0
+            token = ""
+            parts: list[str] = []
+            while i < n:
+                ch = text[i]
+                if ch == "(":
+                    depth_paren += 1
+                    token += ch
+                elif ch == ")":
+                    depth_paren = max(0, depth_paren - 1)
+                    token += ch
+                elif ch == "," and depth_paren == 0 and len(parts) < 2:
+                    parts.append(token.strip())
+                    token = ""
+                elif ch == "}" and depth_paren == 0:
+                    parts.append(token.strip())
+                    token = ""
+                    i += 1
+                    break
+                else:
+                    token += ch
+                i += 1
+            if len(parts) >= 3:
+                rows.append({"method": parts[0], "param": parts[1], "target": parts[2]})
         return rows
+
+    @staticmethod
+    def _extract_species_constant(text: str) -> str:
+        m = re.search(r"\bSPECIES_[A-Z0-9_]+\b", str(text or ""))
+        return m.group(0) if m else ""
 
     def _render_evo_rows(self) -> None:
         if not dpg.does_item_exist(TAGS["evo_rows"]):
@@ -1244,13 +1304,14 @@ class GuiActions:
             )
 
             target = str(row.get("target") or "").strip()
+            target_constant = self._extract_species_constant(target)
             tooltip_text = target or "Unknown target"
             img_tag = f"evo_tip_img_{idx}"
             tex_tag, w, h = "tex_front", self._evo_tooltip_scale_px, self._evo_tooltip_scale_px
             folder_name = ""
             has_second_frame = False
             if self.editor and self.state.project_loaded:
-                species = self.editor.species_by_constant.get(target)
+                species = self.editor.species_by_constant.get(target_constant)
                 if species and species.folder_name:
                     folder_name = str(species.folder_name)
                     try:
@@ -1293,26 +1354,39 @@ class GuiActions:
 
     def _sync_evolution_param_widget(self) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL")
-        is_level = method == "EVO_LEVEL"
-        is_item = method == "EVO_ITEM"
-        is_trade = method == "EVO_TRADE"
-        is_friendship = method == "EVO_FRIENDSHIP"
+        kind = self._evolution_param_kind(method)
+        is_level = kind == "level"
+        is_item = kind == "item"
+        is_trade = kind == "trade"
+        is_trade_item = kind == "trade_item"
+        is_friendship = kind == "friendship"
+        is_text = kind == "text"
 
         dpg.configure_item("evo_level_param", show=is_level)
+        if dpg.does_item_exist("evo_level_label"):
+            dpg.configure_item("evo_level_label", show=is_level)
         dpg.configure_item("evo_friendship_param", show=is_friendship)
+        if dpg.does_item_exist("evo_friendship_label"):
+            dpg.configure_item("evo_friendship_label", show=is_friendship)
         dpg.configure_item("evo_item_param", show=is_item)
-        dpg.configure_item("evo_trade_item_param", show=is_trade)
-        dpg.configure_item("evo_param", show=False)
+        if dpg.does_item_exist("evo_item_label"):
+            dpg.configure_item("evo_item_label", show=is_item)
+        dpg.configure_item("evo_trade_item_param", show=is_trade_item)
+        if dpg.does_item_exist("evo_trade_item_label"):
+            dpg.configure_item("evo_trade_item_label", show=is_trade_item)
+        dpg.configure_item("evo_param", show=is_text)
+        if dpg.does_item_exist("evo_param_label"):
+            dpg.configure_item("evo_param_label", show=is_text)
 
         options = self.state.item_options or ["ITEM_NONE"]
         current = str(dpg.get_value("evo_param") or "").strip()
         if is_item:
             dpg.set_value("evo_item_param", current if current in options else options[0])
-        elif is_trade:
+        elif is_trade_item:
             dpg.set_value("evo_trade_item_param", current if current in options else "ITEM_NONE")
         elif is_level:
             try:
-                dpg.set_value("evo_level_param", max(1, min(100, int(current or "16"))))
+                dpg.set_value("evo_level_param", max(0, min(100, int(current or "16"))))
             except ValueError:
                 dpg.set_value("evo_level_param", 16)
         elif is_friendship:
@@ -1320,6 +1394,215 @@ class GuiActions:
                 dpg.set_value("evo_friendship_param", max(1, min(255, int(current or "220"))))
             except ValueError:
                 dpg.set_value("evo_friendship_param", 220)
+        elif not is_text and dpg.does_item_exist("evo_param"):
+            dpg.set_value("evo_param", "0")
+
+        self._sync_evolution_condition_widgets()
+
+    @staticmethod
+    def _parse_target_condition(raw_target: str) -> tuple[str, list[tuple[str, list[str]]]]:
+        text = str(raw_target or "").strip()
+        m_species = re.search(r"\bSPECIES_[A-Z0-9_]+\b", text)
+        species = m_species.group(0) if m_species else text
+        m_block = re.search(r"CONDITIONS\((.*)\)", text)
+        if not m_block:
+            return species, []
+        body = m_block.group(1)
+        clauses: list[tuple[str, list[str]]] = []
+        for m in re.finditer(r"\{\s*(IF_[A-Z0-9_]+)\s*,\s*([^}]*)\}", body):
+            cond = m.group(1).strip()
+            args = [p.strip() for p in m.group(2).split(",") if p.strip()]
+            clauses.append((cond, args))
+        return species, clauses
+
+    def _compose_target_with_condition(self, species_target: str, extra_clauses: list[tuple[str, list[str]]] | None = None) -> str:
+        species = self._extract_species_constant(species_target)
+        if not species:
+            return str(species_target or "").strip()
+        enabled = bool(dpg.get_value("evo_condition_enabled")) if dpg.does_item_exist("evo_condition_enabled") else False
+        if not enabled:
+            return species
+        cond = str(dpg.get_value("evo_condition_type") or "").strip()
+        if not cond:
+            return species
+        clauses: list[tuple[str, list[str]]] = []
+        for row in self.state.evolution_condition_rows:
+            c = str(row.get("condition") or "").strip()
+            args = [a.strip() for a in str(row.get("args") or "").split(",") if a.strip()]
+            if c and args:
+                clauses.append((c, args))
+        for c, args in (extra_clauses or []):
+            if c:
+                cleaned = [a for a in args if str(a or "").strip()]
+                if cleaned:
+                    clauses.append((c, cleaned))
+        if not clauses:
+            return species
+        parts = ["{" + c + ", " + ", ".join(args) + "}" for c, args in clauses]
+        return f"{species}, CONDITIONS({', '.join(parts)})"
+
+    def _sync_evolution_condition_widgets(self) -> None:
+        enabled = bool(dpg.get_value("evo_condition_enabled")) if dpg.does_item_exist("evo_condition_enabled") else False
+        cond = str(dpg.get_value("evo_condition_type") or "").strip() if dpg.does_item_exist("evo_condition_type") else ""
+        options = self._condition_value_options(cond) if enabled else []
+        if dpg.does_item_exist("evo_condition_type"):
+            dpg.configure_item("evo_condition_type", show=enabled)
+        if dpg.does_item_exist("evo_condition_value"):
+            dpg.configure_item("evo_condition_value", show=bool(options))
+            if options:
+                dpg.configure_item("evo_condition_value", items=options)
+                current = str(dpg.get_value("evo_condition_value") or "")
+                if current not in options:
+                    dpg.set_value("evo_condition_value", options[0])
+        if dpg.does_item_exist("evo_condition_param"):
+            dpg.configure_item("evo_condition_param", show=(enabled and not options))
+        if dpg.does_item_exist("evo_condition_value_int"):
+            dpg.configure_item("evo_condition_value_int", show=(enabled and cond == "IF_BAG_ITEM_COUNT"))
+
+    def _condition_value_options(self, cond: str) -> list[str]:
+        token = str(cond or "").strip()
+        if not token:
+            return []
+        if token in {"IF_KNOW_MOVE_TYPE", "IF_KNOWS_MOVE_TYPE"}:
+            return list(self.state.type_options or ["TYPE_NORMAL"])
+        if "MOVE" in token:
+            return list(self.state.move_options or ["MOVE_TACKLE"])
+        if "ITEM" in token:
+            return list(self.state.item_options or ["ITEM_NONE"])
+        if "TYPE" in token:
+            return list(self.state.type_options or ["TYPE_NORMAL"])
+        if "SPECIES" in token:
+            values = [str(x.get("constant_name") or "").strip() for x in self.state.species_list]
+            return [x for x in values if x]
+        if "MAP" in token:
+            return list(self.state.map_options or ["MAP_NONE"])
+        if "NATURE" in token:
+            return list(self.state.nature_options or ["NATURE_HARDY"])
+        if "TIME" in token:
+            return ["TIME_MORNING", "TIME_DAY", "TIME_EVENING", "TIME_NIGHT"]
+        if "WEATHER" in token:
+            return ["WEATHER_SUNNY", "WEATHER_RAIN", "WEATHER_SNOW", "WEATHER_SANDSTORM", "WEATHER_FOG"]
+        if "GENDER" in token:
+            return ["MON_MALE", "MON_FEMALE"]
+        return []
+
+    def on_evolution_condition_toggle(self, sender=None, app_data=None, user_data=None) -> None:
+        if dpg.does_item_exist("evo_condition_enabled") and not bool(dpg.get_value("evo_condition_enabled")):
+            self.state.evolution_condition_rows = []
+            self.state.selected_evolution_condition_index = -1
+            self._render_evolution_condition_rows()
+        self._sync_evolution_condition_widgets()
+        self.mark_dirty()
+
+    def on_evolution_condition_type_change(self, sender=None, app_data=None, user_data=None) -> None:
+        cond = str(dpg.get_value("evo_condition_type") or "").strip()
+        options = self._condition_value_options(cond)
+        if not options and dpg.does_item_exist("evo_condition_param"):
+            dpg.set_value("evo_condition_param", "")
+        if cond == "IF_BAG_ITEM_COUNT" and dpg.does_item_exist("evo_condition_value_int"):
+            dpg.set_value("evo_condition_value_int", 0)
+        self._sync_evolution_condition_widgets()
+        self.mark_dirty()
+
+    def _condition_row_from_ui(self) -> dict[str, str] | None:
+        cond = str(dpg.get_value("evo_condition_type") or "").strip() if dpg.does_item_exist("evo_condition_type") else ""
+        if not cond:
+            return None
+        if cond == "IF_BAG_ITEM_COUNT":
+            item = str(dpg.get_value("evo_condition_value") or "ITEM_NONE").strip() or "ITEM_NONE"
+            count = str(max(0, int(dpg.get_value("evo_condition_value_int") or 0)))
+            return {"condition": cond, "args": f"{item}, {count}"}
+        options = self._condition_value_options(cond)
+        if options and dpg.does_item_exist("evo_condition_value"):
+            arg = str(dpg.get_value("evo_condition_value") or options[0]).strip()
+        else:
+            arg = str(dpg.get_value("evo_condition_param") or "").strip()
+        if not arg:
+            return None
+        return {"condition": cond, "args": arg}
+
+    def _render_evolution_condition_rows(self) -> None:
+        if not dpg.does_item_exist("evo_condition_rows"):
+            return
+        labels = [f"{row['condition']} | {row['args']}" for row in self.state.evolution_condition_rows]
+        dpg.configure_item("evo_condition_rows", items=labels)
+        dpg.configure_item("evo_condition_rows", show=bool(labels))
+        if 0 <= self.state.selected_evolution_condition_index < len(labels):
+            dpg.set_value("evo_condition_rows", labels[self.state.selected_evolution_condition_index])
+        elif labels:
+            self.state.selected_evolution_condition_index = 0
+            dpg.set_value("evo_condition_rows", labels[0])
+        else:
+            self.state.selected_evolution_condition_index = -1
+
+    def add_evolution_condition_row(self, sender=None, app_data=None, user_data=None) -> None:
+        row = self._condition_row_from_ui()
+        if row is None:
+            self._set_message("Set a valid condition first")
+            return
+        self.state.evolution_condition_rows.append(row)
+        self.state.selected_evolution_condition_index = len(self.state.evolution_condition_rows) - 1
+        if dpg.does_item_exist("evo_condition_enabled"):
+            dpg.set_value("evo_condition_enabled", True)
+        self._render_evolution_condition_rows()
+        self.mark_dirty()
+
+    def update_evolution_condition_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_evolution_condition_index
+        if idx < 0 or idx >= len(self.state.evolution_condition_rows):
+            self._set_message("Select a condition row to update")
+            return
+        row = self._condition_row_from_ui()
+        if row is None:
+            self._set_message("Set a valid condition first")
+            return
+        self.state.evolution_condition_rows[idx] = row
+        self._render_evolution_condition_rows()
+        self.mark_dirty()
+
+    def remove_evolution_condition_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_evolution_condition_index
+        if idx < 0 or idx >= len(self.state.evolution_condition_rows):
+            self._set_message("Select a condition row to remove")
+            return
+        del self.state.evolution_condition_rows[idx]
+        self.state.selected_evolution_condition_index = min(idx, len(self.state.evolution_condition_rows) - 1)
+        if not self.state.evolution_condition_rows and dpg.does_item_exist("evo_condition_enabled"):
+            dpg.set_value("evo_condition_enabled", False)
+        self._render_evolution_condition_rows()
+        self.mark_dirty()
+
+    def select_evolution_condition_row(self, sender=None, app_data=None, user_data=None) -> None:
+        selected = str(dpg.get_value("evo_condition_rows") or "") if dpg.does_item_exist("evo_condition_rows") else ""
+        if not selected:
+            self.state.selected_evolution_condition_index = -1
+            return
+        for idx, row in enumerate(self.state.evolution_condition_rows):
+            label = f"{row['condition']} | {row['args']}"
+            if label != selected:
+                continue
+            self.state.selected_evolution_condition_index = idx
+            cond = str(row.get("condition") or "")
+            args = [a.strip() for a in str(row.get("args") or "").split(",") if a.strip()]
+            if dpg.does_item_exist("evo_condition_type"):
+                dpg.set_value("evo_condition_type", cond)
+            if cond == "IF_BAG_ITEM_COUNT":
+                if dpg.does_item_exist("evo_condition_value") and args:
+                    dpg.set_value("evo_condition_value", args[0])
+                if dpg.does_item_exist("evo_condition_value_int") and len(args) > 1:
+                    try:
+                        dpg.set_value("evo_condition_value_int", int(args[1]))
+                    except Exception:
+                        dpg.set_value("evo_condition_value_int", 0)
+            else:
+                options = self._condition_value_options(cond)
+                if options and dpg.does_item_exist("evo_condition_value") and args:
+                    dpg.configure_item("evo_condition_value", items=options)
+                    dpg.set_value("evo_condition_value", args[0] if args[0] in options else options[0])
+                elif dpg.does_item_exist("evo_condition_param"):
+                    dpg.set_value("evo_condition_param", ", ".join(args))
+            self._sync_evolution_condition_widgets()
+            return
 
     def on_evolution_method_change(self, sender=None, app_data=None, user_data=None) -> None:
         self._sync_evolution_param_widget()
@@ -1339,32 +1622,70 @@ class GuiActions:
 
     def _evolution_param_from_ui(self) -> str:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
-        if method == "EVO_LEVEL":
-            return str(max(1, min(100, int(dpg.get_value("evo_level_param") or 16))))
-        if method == "EVO_ITEM":
+        kind = self._evolution_param_kind(method)
+        if kind == "none":
+            return "0"
+        if kind == "level":
+            return str(max(0, min(100, int(dpg.get_value("evo_level_param") or 16))))
+        if kind == "item":
             return str(dpg.get_value("evo_item_param") or "ITEM_NONE").strip() or "ITEM_NONE"
-        if method == "EVO_TRADE":
+        if kind == "trade":
+            return "0"
+        if kind == "trade_item":
             return str(dpg.get_value("evo_trade_item_param") or "ITEM_NONE").strip() or "ITEM_NONE"
-        if method == "EVO_FRIENDSHIP":
+        if kind == "friendship":
             return str(max(1, min(255, int(dpg.get_value("evo_friendship_param") or 220))))
         return str(dpg.get_value("evo_param") or "1").strip() or "1"
 
     def _set_evolution_param_ui(self, method: str, param: str) -> None:
         dpg.set_value("evo_param", param)
-        if method == "EVO_LEVEL":
+        kind = self._evolution_param_kind(method)
+        if kind == "level":
             try:
-                dpg.set_value("evo_level_param", max(1, min(100, int(param or "16"))))
+                dpg.set_value("evo_level_param", max(0, min(100, int(param or "16"))))
             except ValueError:
                 dpg.set_value("evo_level_param", 16)
-        elif method == "EVO_ITEM":
+        elif kind == "item":
             dpg.set_value("evo_item_param", param or "ITEM_NONE")
-        elif method == "EVO_TRADE":
+        elif kind == "trade":
+            dpg.set_value("evo_trade_item_param", "ITEM_NONE")
+            dpg.set_value("evo_param", "0")
+        elif kind == "trade_item":
             dpg.set_value("evo_trade_item_param", param or "ITEM_NONE")
-        elif method == "EVO_FRIENDSHIP":
+        elif kind == "friendship":
             try:
                 dpg.set_value("evo_friendship_param", max(1, min(255, int(param or "220"))))
             except ValueError:
                 dpg.set_value("evo_friendship_param", 220)
+        elif kind == "none":
+            dpg.set_value("evo_param", "0")
+
+    @staticmethod
+    def _evolution_param_kind(method: str) -> str:
+        token = str(method or "").strip()
+        if token in {
+            "EVO_NONE",
+            "EVO_SPLIT_FROM_EVO",
+            "EVO_SCRIPT_TRIGGER",
+            "EVO_BATTLE_END",
+            "EVO_MODE_NORMAL",
+            "EVO_MODE_TRADE",
+            "EVO_MODE_ITEM_USE",
+            "EVO_MODE_ITEM_CHECK",
+            "EVO_MODE_BATTLE_SPECIAL",
+        }:
+            return "none"
+        if token == "EVO_LEVEL" or "LEVEL" in token:
+            return "level"
+        if token == "EVO_FRIENDSHIP" or "FRIENDSHIP" in token:
+            return "none"
+        if token == "EVO_TRADE":
+            return "trade"
+        if "TRADE" in token and "ITEM" in token:
+            return "trade_item"
+        if token == "EVO_ITEM" or ("ITEM" in token and "TRADE" not in token):
+            return "item"
+        return "text"
 
     def select_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         if user_data is None:
@@ -1386,7 +1707,35 @@ class GuiActions:
         row = self.state.evolution_rows[idx]
         dpg.set_value("evo_method", row["method"])
         self._set_evolution_param_ui(row["method"], row["param"])
-        dpg.set_value("evo_target", row["target"])
+        species_target, clauses = self._parse_target_condition(str(row["target"] or ""))
+        cond_type = clauses[0][0] if clauses else ""
+        cond_args = clauses[0][1] if clauses else []
+        self.state.evolution_condition_rows = [{"condition": c, "args": ", ".join(args)} for c, args in clauses]
+        self.state.selected_evolution_condition_index = 0 if self.state.evolution_condition_rows else -1
+        self._render_evolution_condition_rows()
+        dpg.set_value("evo_target", species_target)
+        if dpg.does_item_exist("evo_condition_enabled"):
+            dpg.set_value("evo_condition_enabled", bool(cond_type))
+        if dpg.does_item_exist("evo_condition_type") and cond_type:
+            dpg.set_value("evo_condition_type", cond_type)
+        if cond_type == "IF_BAG_ITEM_COUNT":
+            if dpg.does_item_exist("evo_condition_value") and cond_args:
+                item_options = self._condition_value_options(cond_type)
+                if item_options:
+                    dpg.configure_item("evo_condition_value", items=item_options)
+                    dpg.set_value("evo_condition_value", cond_args[0] if cond_args[0] in item_options else item_options[0])
+            if dpg.does_item_exist("evo_condition_value_int") and len(cond_args) > 1:
+                try:
+                    dpg.set_value("evo_condition_value_int", max(0, int(cond_args[1])))
+                except Exception:
+                    dpg.set_value("evo_condition_value_int", 0)
+        elif dpg.does_item_exist("evo_condition_value") and cond_args:
+            options = self._condition_value_options(cond_type)
+            if options:
+                dpg.configure_item("evo_condition_value", items=options)
+                dpg.set_value("evo_condition_value", cond_args[0] if cond_args[0] in options else options[0])
+        if dpg.does_item_exist("evo_condition_param"):
+            dpg.set_value("evo_condition_param", ", ".join(cond_args) if cond_args else "")
         self._sync_evolution_param_widget()
 
         selected = f"{row['method']} | {row['param']} -> {row['target']}"
@@ -1397,7 +1746,7 @@ class GuiActions:
         self._evo_last_click_time = now
 
     def _jump_to_species_from_evolution_target(self, target_constant: str) -> None:
-        target_constant = str(target_constant or "").strip()
+        target_constant = self._extract_species_constant(str(target_constant or "").strip())
         if not target_constant:
             return
         target_item = next((x for x in self.state.species_list if x.get("constant_name") == target_constant), None)
@@ -1467,6 +1816,8 @@ class GuiActions:
             finally:
                 self._suspend_dirty_events = False
             self.state.evolution_rows = []
+            self.state.evolution_condition_rows = []
+            self.state.selected_evolution_condition_index = -1
             self.state.level_up_rows = []
             self.state.teachable_rows = []
             self.state.tutor_rows = []
@@ -1474,6 +1825,7 @@ class GuiActions:
             self._render_levelup_rows()
             self._render_teachable_rows()
             self._render_tutor_rows()
+            self._render_evolution_condition_rows()
             self._sync_evolution_param_widget()
             self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
             self.state.editor_data = self._read_editor_from_ui()
@@ -1532,7 +1884,17 @@ class GuiActions:
         finally:
             self._suspend_dirty_events = False
         self.state.evolution_rows = self._parse_evo_rows(species.evolutions_raw)
+        self.state.selected_evolution_index = -1
+        self.state.evolution_condition_rows = []
+        self.state.selected_evolution_condition_index = -1
+        if dpg.does_item_exist("evo_condition_enabled"):
+            dpg.set_value("evo_condition_enabled", False)
+        if dpg.does_item_exist("evo_condition_param"):
+            dpg.set_value("evo_condition_param", "")
+        if dpg.does_item_exist("evo_condition_value_int"):
+            dpg.set_value("evo_condition_value_int", 0)
         self._render_evo_rows()
+        self._render_evolution_condition_rows()
         self.state.level_up_rows = list(species.level_up_moves or [])
         tmhm_set = set(self.state.tmhm_options)
         tutor_set = set(self.state.tutor_options)
@@ -1684,6 +2046,8 @@ class GuiActions:
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, value)
         self.state.evolution_rows = []
+        self.state.evolution_condition_rows = []
+        self.state.selected_evolution_condition_index = -1
         self.state.level_up_rows = []
         self.state.teachable_rows = []
         self.state.tutor_rows = []
@@ -1691,6 +2055,7 @@ class GuiActions:
         self._render_levelup_rows()
         self._render_teachable_rows()
         self._render_tutor_rows()
+        self._render_evolution_condition_rows()
         self._sync_evolution_param_widget()
         self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
         if dpg.does_item_exist("evo_target"):
@@ -2027,8 +2392,9 @@ class GuiActions:
     def add_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
         param = self._evolution_param_from_ui()
-        target = str(dpg.get_value("evo_target") or "").strip()
-        if not target:
+        target_raw = str(dpg.get_value("evo_target") or "").strip()
+        target = self._compose_target_with_condition(target_raw, [])
+        if not self._extract_species_constant(target):
             self._set_message("Evolution target species is empty")
             return
         self.state.evolution_rows.append({"method": method, "param": param, "target": target})
@@ -2043,8 +2409,9 @@ class GuiActions:
             return
         method = str(dpg.get_value("evo_method") or "EVO_LEVEL").strip()
         param = self._evolution_param_from_ui()
-        target = str(dpg.get_value("evo_target") or "").strip()
-        if not target:
+        target_raw = str(dpg.get_value("evo_target") or "").strip()
+        target = self._compose_target_with_condition(target_raw, [])
+        if not self._extract_species_constant(target):
             self._set_message("Evolution target species is empty")
             return
         self.state.evolution_rows[idx] = {"method": method, "param": param, "target": target}
@@ -2064,7 +2431,10 @@ class GuiActions:
     def clear_evolutions(self, sender=None, app_data=None, user_data=None) -> None:
         self.state.evolution_rows = []
         self.state.selected_evolution_index = -1
+        self.state.evolution_condition_rows = []
+        self.state.selected_evolution_condition_index = -1
         self._render_evo_rows()
+        self._render_evolution_condition_rows()
         self.mark_dirty()
 
     def on_preview_mode_change(self, sender=None, app_data=None, user_data=None) -> None:
