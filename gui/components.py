@@ -348,7 +348,7 @@ def _build_editor_tab(actions) -> None:
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats, Types & Abilities"):
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(tag=TAGS["stats_fields_panel"], border=False, width=500, height=320, no_scrollbar=True):
+                    with dpg.child_window(tag=TAGS["stats_fields_panel"], border=False, width=500, height=360, no_scrollbar=True):
                         with dpg.group(horizontal=True):
                             with dpg.child_window(border=False, width=240, height=300):
                                 dpg.add_text("Base Stats")
@@ -390,7 +390,7 @@ def _build_editor_tab(actions) -> None:
                                 with dpg.group(horizontal=True):
                                     dpg.add_text("SpD")
                                     dpg.add_input_int(tag="ev_sp_defense", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
-                    with dpg.child_window(tag=TAGS["stats_radar_panel"], border=False, width=-1, height=320, no_scrollbar=True):
+                    with dpg.child_window(tag=TAGS["stats_radar_panel"], border=False, width=-1, height=360, no_scrollbar=True):
                         dpg.add_drawlist(tag=TAGS["stats_radar_drawlist"], width=-1, height=-1)
                 dpg.add_spacer(height=8)
                 dpg.add_text("Types:")

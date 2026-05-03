@@ -299,11 +299,14 @@ class GuiActions:
             c = stat_colors[i]
             dpg.draw_circle(p, 3.3, color=(225, 235, 245, 255), fill=c, thickness=1.2, parent=draw_tag)
 
+        if self._radar_debug_text:
+            dpg.draw_text((12, 12), self._radar_debug_text, color=(250, 238, 140, 255), size=15, parent=draw_tag)
+
     def _stats_radar_geometry(self) -> dict[str, float]:
         panel_w, panel_h = self._radar_last_size
         cx = panel_w * 0.5
         cy = panel_h * 0.50
-        radius = min(panel_w * 0.28, panel_h * 0.30)
+        radius = min(panel_w * 0.42, panel_h * 0.42)
         return {"panel_w": panel_w, "panel_h": panel_h, "cx": cx, "cy": cy, "radius": radius}
 
     @staticmethod
@@ -335,13 +338,78 @@ class GuiActions:
         return (float(mn[0]), float(mn[1])), (float(sz[0]), float(sz[1]))
 
     def _handle_stats_radar_drag(self) -> None:
-        return
+        if not self.state.project_loaded or not dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
+            self._radar_drag_index = None
+            self._radar_mouse_was_down = False
+            return
+
+        left_down = bool(dpg.is_mouse_button_down(dpg.mvMouseButton_Left))
+        hovered = bool(dpg.is_item_hovered(TAGS["stats_radar_drawlist"]))
+        labels = ["hp", "attack", "defense", "speed", "sp_defense", "sp_attack"]
+        n = len(labels)
+        geom = self._stats_radar_geometry()
+        cx = geom["cx"]
+        cy = geom["cy"]
+        radius = geom["radius"]
+
+        rect = self._safe_item_rect_min_size(TAGS["stats_radar_drawlist"])
+        if rect is None:
+            return
+        rect_min, _ = rect
+        mx, my = dpg.get_mouse_pos(local=False)
+        local_x = float(mx) - rect_min[0]
+        local_y = float(my) - rect_min[1]
+        rect_size = dpg.get_item_rect_size(TAGS["stats_radar_drawlist"])
+        if rect_size and len(rect_size) >= 2:
+            w = max(220.0, float(rect_size[0]))
+            h = max(180.0, float(rect_size[1]))
+            cx = w * 0.5
+            cy = h * 0.5
+            radius = min(w * 0.42, h * 0.42)
+
+        if left_down and hovered and self._radar_drag_index is None:
+            vx = local_x - cx
+            vy = local_y - cy
+            if abs(vx) + abs(vy) > 0.001:
+                mouse_angle = math.atan2(vy, vx)
+                nearest_idx = 0
+                nearest_delta = 1e9
+                for idx in range(n):
+                    axis_angle = (2.0 * math.pi * idx / n) - (math.pi / 2.0)
+                    axis_angle = math.atan2(math.sin(axis_angle), math.cos(axis_angle))
+                    delta = abs(math.atan2(math.sin(mouse_angle - axis_angle), math.cos(mouse_angle - axis_angle)))
+                    if delta < nearest_delta:
+                        nearest_delta = delta
+                        nearest_idx = idx
+                self._radar_drag_index = nearest_idx
+
+        if left_down and self._radar_drag_index is not None:
+            idx = self._radar_drag_index
+            angle = (2.0 * math.pi * idx / n) - (math.pi / 2.0)
+            ux = math.cos(angle)
+            uy = math.sin(angle)
+            proj = ((local_x - cx) * ux) + ((local_y - cy) * uy)
+            ratio = max(0.0, min(1.0, proj / max(1.0, radius)))
+            new_value = max(1, min(255, int(round(ratio * 255.0))))
+            tag = labels[idx]
+            if dpg.does_item_exist(tag) and int(dpg.get_value(tag) or 1) != new_value:
+                dpg.set_value(tag, new_value)
+                self.mark_dirty()
+            self._radar_debug_text = f"{tag.upper()}: {new_value}"
+
+        if not left_down:
+            self._radar_drag_index = None
+            self._radar_debug_text = ""
+
+        self._radar_mouse_was_down = left_down
 
     def on_stats_radar_clicked(self, sender=None, app_data=None, user_data=None) -> None:
-        return
+        self._radar_mouse_was_down = False
+        self._handle_stats_radar_drag()
 
     def on_stats_radar_released(self, sender=None, app_data=None, user_data=None) -> None:
-        return
+        self._radar_drag_index = None
+        self._radar_mouse_was_down = False
 
     @staticmethod
     def _payload_signature(payload: dict) -> str:
@@ -737,6 +805,7 @@ class GuiActions:
             self._radar_initialized = True
             self._refresh_stats_radar()
         self._update_evolution_hover_preview()
+        self._handle_stats_radar_drag()
         now = time.monotonic()
 
         hover_idx = -1
@@ -847,14 +916,14 @@ class GuiActions:
         dpg.configure_item("evo_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item("evo_trade_item_param", width=max(220, workspace_w - 360))
         dpg.configure_item(TAGS["evo_rows"], width=workspace_w - 30)
-        stats_left_w = min(560, max(420, int(workspace_w * 0.46)))
+        stats_left_w = min(520, max(380, int(workspace_w * 0.35)))
         stats_radar_w = max(280, workspace_w - stats_left_w - 30)
         if dpg.does_item_exist(TAGS["stats_fields_panel"]):
-            dpg.configure_item(TAGS["stats_fields_panel"], width=stats_left_w, height=320)
+            dpg.configure_item(TAGS["stats_fields_panel"], width=stats_left_w, height=360)
         if dpg.does_item_exist(TAGS["stats_radar_panel"]):
-            dpg.configure_item(TAGS["stats_radar_panel"], width=stats_radar_w, height=320)
+            dpg.configure_item(TAGS["stats_radar_panel"], width=stats_radar_w, height=360)
         if dpg.does_item_exist(TAGS["stats_radar_drawlist"]):
-            dpg.configure_item(TAGS["stats_radar_drawlist"], width=stats_radar_w - 8, height=312)
+            dpg.configure_item(TAGS["stats_radar_drawlist"], width=stats_radar_w - 8, height=352)
         half_learnset_w = max(260, int((workspace_w - 44) / 2))
         if dpg.does_item_exist(TAGS["learnset_level_panel"]):
             dpg.configure_item(TAGS["learnset_level_panel"], width=half_learnset_w)
