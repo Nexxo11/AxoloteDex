@@ -38,3 +38,4 @@ config.json
 output/build_log.txt
 output/change_plan.json
 output/change_plan.md
+config.json

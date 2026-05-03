@@ -346,7 +346,7 @@ def _build_editor_tab(actions) -> None:
                                     dpg.add_text("Play selected cry")
                     with dpg.child_window(tag=TAGS["general_right"], width=360, height=528, border=False):
                         _build_inline_preview_block(actions)
-        with dpg.tab(label="Stats"):
+        with dpg.tab(label="Stats, Types & Abilities"):
                 with dpg.group(horizontal=True):
                     with dpg.child_window(tag=TAGS["stats_fields_panel"], border=False, width=500, height=320, no_scrollbar=True):
                         with dpg.group(horizontal=True):
@@ -392,7 +392,7 @@ def _build_editor_tab(actions) -> None:
                                     dpg.add_input_int(tag="ev_sp_defense", default_value=0, min_value=0, max_value=3, width=110, callback=actions.mark_dirty)
                     with dpg.child_window(tag=TAGS["stats_radar_panel"], border=False, width=-1, height=320, no_scrollbar=True):
                         dpg.add_drawlist(tag=TAGS["stats_radar_drawlist"], width=-1, height=-1)
-        with dpg.tab(label="Types & Abilities"):
+                dpg.add_spacer(height=8)
                 dpg.add_text("Types:")
                 with dpg.group(horizontal=True):
                     dpg.add_image_button("tex_type1", tag=TAGS["type1_icon_btn"], width=64, height=32, callback=actions.open_type1_modal)
