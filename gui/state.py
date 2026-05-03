@@ -74,6 +74,7 @@ def default_editor_data() -> dict[str, Any]:
         "ability_hidden": "ABILITY_NONE",
         "height": 10,
         "weight": 100,
+        "gender_ratio_enabled": True,
         "gender_ratio": 50,
         "catch_rate": 45,
         "exp_yield": 64,

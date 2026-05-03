@@ -95,6 +95,7 @@ class GuiActions:
         self._radar_initialized: bool = False
         self._radar_drag_start_mouse: tuple[float, float] | None = None
         self._radar_drag_snapshot: dict | None = None
+        self._type_modal_mouse_was_down: bool = False
 
     def set_button_themes(self, primary_theme: int, secondary_theme: int, disabled_theme: int | None = None) -> None:
         self._primary_button_theme = primary_theme
@@ -183,14 +184,35 @@ class GuiActions:
         return max(low, min(high, n))
 
     @staticmethod
-    def _gender_ratio_to_percent(value: str | int | None) -> int:
-        if isinstance(value, int):
-            return max(0, min(100, value))
+    def _gender_ratio_to_percent(value: str | int | float | None) -> float:
+        if isinstance(value, (int, float)):
+            return max(0.0, min(100.0, float(value)))
         text = str(value or "").strip()
-        m = re.match(r"^PERCENT_FEMALE\((\d+)\)$", text)
+        m = re.match(r"^PERCENT_FEMALE\((\d+(?:\.\d+)?)\)$", text)
         if m:
-            return max(0, min(100, int(m.group(1))))
-        return 50
+            return max(0.0, min(100.0, float(m.group(1))))
+        m = re.match(r"^(\d+(?:\.\d+)?)$", text)
+        if m:
+            return max(0.0, min(100.0, float(m.group(1))))
+        return 50.0
+
+    @classmethod
+    def _format_gender_ratio_expr(cls, value: str | int | float | None) -> str:
+        pct = cls._gender_ratio_to_percent(value)
+        pct = round(pct, 1)
+        if float(pct).is_integer():
+            return f"PERCENT_FEMALE({int(pct)})"
+        return f"PERCENT_FEMALE({pct:.1f})"
+
+    @staticmethod
+    def _gender_ratio_enabled(value: str | int | float | None) -> bool:
+        text = str(value or "").strip().upper()
+        return text != "MON_GENDERLESS"
+
+    def _sync_gender_ratio_widgets(self) -> None:
+        enabled = bool(dpg.get_value("gender_ratio_enabled")) if dpg.does_item_exist("gender_ratio_enabled") else True
+        if dpg.does_item_exist("gender_ratio"):
+            dpg.configure_item("gender_ratio", show=enabled)
 
     @staticmethod
     def _int_from_raw(value: str | int | None, fallback: int) -> int:
@@ -782,18 +804,60 @@ class GuiActions:
         self.on_type_change()
 
     def open_type1_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_type_modals()
         if dpg.does_item_exist(TAGS["type1_modal"]):
-            dpg.configure_item(TAGS["type1_modal"], show=True)
+            rect = self._safe_item_rect_min_size(TAGS["type1_icon_btn"])
+            if rect is not None:
+                mn, sz = rect
+                pos = (int(mn[0]), int(mn[1] + sz[1] + 6))
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                pos = (int(mx), int(my))
+            dpg.configure_item(TAGS["type1_modal"], pos=pos, show=True)
 
     def open_type2_modal(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_type_modals()
         if dpg.does_item_exist(TAGS["type2_modal"]):
-            dpg.configure_item(TAGS["type2_modal"], show=True)
+            rect = self._safe_item_rect_min_size(TAGS["type2_icon_btn"])
+            if rect is not None:
+                mn, sz = rect
+                pos = (int(mn[0]), int(mn[1] + sz[1] + 6))
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                pos = (int(mx), int(my))
+            dpg.configure_item(TAGS["type2_modal"], pos=pos, show=True)
 
     def close_type_modals(self, sender=None, app_data=None, user_data=None) -> None:
         if dpg.does_item_exist(TAGS["type1_modal"]):
             dpg.configure_item(TAGS["type1_modal"], show=False)
         if dpg.does_item_exist(TAGS["type2_modal"]):
             dpg.configure_item(TAGS["type2_modal"], show=False)
+
+    def _handle_type_modal_auto_close(self) -> None:
+        left_down = bool(dpg.is_mouse_button_down(dpg.mvMouseButton_Left))
+        if left_down and not self._type_modal_mouse_was_down:
+            any_open = False
+            for tag in (TAGS["type1_modal"], TAGS["type2_modal"]):
+                if dpg.does_item_exist(tag):
+                    try:
+                        if bool(dpg.get_item_configuration(tag).get("show", False)):
+                            any_open = True
+                            break
+                    except Exception:
+                        continue
+            if any_open:
+                hovered_tags = (
+                    TAGS["type1_modal"],
+                    TAGS["type2_modal"],
+                    TAGS["type1_list"],
+                    TAGS["type2_list"],
+                    TAGS["type1_icon_btn"],
+                    TAGS["type2_icon_btn"],
+                )
+                hovered = any(dpg.does_item_exist(tag) and dpg.is_item_hovered(tag) for tag in hovered_tags)
+                if not hovered:
+                    self.close_type_modals()
+        self._type_modal_mouse_was_down = left_down
 
     def request_preview_refresh(self) -> None:
         self._preview_pending = True
@@ -806,6 +870,7 @@ class GuiActions:
             self._refresh_stats_radar()
         self._update_evolution_hover_preview()
         self._handle_stats_radar_drag()
+        self._handle_type_modal_auto_close()
         now = time.monotonic()
 
         hover_idx = -1
@@ -897,10 +962,11 @@ class GuiActions:
             dpg.configure_item("assets_folder", width=max(360, workspace_w - 220))
         general_left_w = max(420, int(workspace_w * 0.65))
         general_right_w = max(280, workspace_w - general_left_w - 36)
+        general_h = max(560, int(row_h * 0.70))
         if dpg.does_item_exist(TAGS["general_left"]):
-            dpg.configure_item(TAGS["general_left"], width=general_left_w)
+            dpg.configure_item(TAGS["general_left"], width=general_left_w, height=general_h)
         if dpg.does_item_exist(TAGS["general_right"]):
-            dpg.configure_item(TAGS["general_right"], width=general_right_w)
+            dpg.configure_item(TAGS["general_right"], width=general_right_w, height=general_h)
         preview_size = max(72, min(112, int((general_right_w - 44) / 3)))
         if dpg.does_item_exist(TAGS["preview_front_img"]):
             dpg.configure_item(TAGS["preview_front_img"], width=preview_size, height=preview_size)
@@ -934,9 +1000,9 @@ class GuiActions:
         dpg.configure_item(TAGS["tutor_rows"], width=workspace_w - 30)
         dpg.configure_item(TAGS["lint_output"], width=workspace_w - 30)
         if dpg.does_item_exist(TAGS["type1_list"]):
-            dpg.configure_item(TAGS["type1_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
+            dpg.configure_item(TAGS["type1_list"], width=max(280, min(520, workspace_w - 220)), height=max(170, min(240, int(row_h * 0.32))))
         if dpg.does_item_exist(TAGS["type2_list"]):
-            dpg.configure_item(TAGS["type2_list"], width=max(300, workspace_w - 180), height=max(260, int(row_h * 0.55)))
+            dpg.configure_item(TAGS["type2_list"], width=max(280, min(520, workspace_w - 220)), height=max(170, min(240, int(row_h * 0.32))))
         self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
         self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
         if dpg.does_item_exist(TAGS["settings_fab"]):
@@ -1922,6 +1988,7 @@ class GuiActions:
         data["weight"] = self._int_from_raw(species.weight, data["weight"])
         data["catch_rate"] = self._int_from_raw(species.catch_rate, data["catch_rate"])
         data["exp_yield"] = self._int_from_raw(species.exp_yield, data["exp_yield"])
+        data["gender_ratio_enabled"] = self._gender_ratio_enabled(species.gender_ratio)
         data["gender_ratio"] = self._gender_ratio_to_percent(species.gender_ratio)
         data["cry_id"] = species.cry_id or "CRY_NONE"
         stats = species.base_stats
@@ -1952,6 +2019,7 @@ class GuiActions:
                     dpg.set_value(tag, value)
         finally:
             self._suspend_dirty_events = False
+        self._sync_gender_ratio_widgets()
         self.state.evolution_rows = self._parse_evo_rows(species.evolutions_raw)
         self.state.selected_evolution_index = -1
         self.state.evolution_condition_rows = []
@@ -1993,6 +2061,9 @@ class GuiActions:
             tag = "edit_mode" if key == "mode" else key
             if dpg.does_item_exist(tag):
                 data[key] = dpg.get_value(tag)
+        constant = str(data.get("constant_name") or "").strip()
+        exists = bool(self.editor and constant and constant in self.editor.species_by_constant)
+        data["mode"] = "edit" if exists else "add"
         return data
 
     def _enforce_text_limits(self) -> None:
@@ -2083,6 +2154,10 @@ class GuiActions:
         self._update_description_counter()
         self.mark_dirty()
 
+    def on_gender_ratio_toggle(self, sender=None, app_data=None, user_data=None) -> None:
+        self._sync_gender_ratio_widgets()
+        self.mark_dirty()
+
     def mark_dirty(self, sender=None, app_data=None, user_data=None) -> None:
         if self._suspend_dirty_events:
             return
@@ -2114,6 +2189,7 @@ class GuiActions:
             tag = "edit_mode" if key == "mode" else key
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, value)
+        self._sync_gender_ratio_widgets()
         self.state.evolution_rows = []
         self.state.evolution_condition_rows = []
         self.state.selected_evolution_condition_index = -1
@@ -2540,7 +2616,11 @@ class GuiActions:
             "abilities": abilities,
             "height": int(e["height"]),
             "weight": int(e["weight"]),
-            "gender_ratio": f"PERCENT_FEMALE({self._clamped_int(e.get('gender_ratio', 50), 0, 100, 50)})",
+            "gender_ratio": (
+                self._format_gender_ratio_expr(e.get("gender_ratio", 50.0))
+                if bool(e.get("gender_ratio_enabled", True))
+                else "MON_GENDERLESS"
+            ),
             "catch_rate": int(e["catch_rate"]),
             "exp_yield": int(e["exp_yield"]),
             "ev_yields": {

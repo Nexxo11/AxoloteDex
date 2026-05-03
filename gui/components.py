@@ -304,11 +304,10 @@ def _build_workspace_panel(actions) -> None:
 
 
 def _build_editor_tab(actions) -> None:
-    dpg.add_combo(["add", "edit"], label="Mode", tag="edit_mode", default_value="add", callback=actions.mark_dirty, width=120)
     with dpg.tab_bar(tag=TAGS["editor_tabs"]):
         with dpg.tab(label="General", tag=TAGS["tab_general"]):
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=528, border=False):
+                    with dpg.child_window(tag=TAGS["general_left"], width=760, height=560, border=False):
                         dpg.add_text("Constant")
                         dpg.add_input_text(tag="constant_name", callback=actions.mark_dirty, width=340)
                         dpg.add_text("Display name")
@@ -336,7 +335,8 @@ def _build_editor_tab(actions) -> None:
                         with dpg.group(horizontal=True):
                             with dpg.group():
                                 dpg.add_text("Female ratio (%)")
-                                dpg.add_input_int(tag="gender_ratio", callback=actions.mark_dirty, width=140, min_value=0, max_value=100, min_clamped=True, max_clamped=True)
+                                dpg.add_checkbox(label="Has gender", tag="gender_ratio_enabled", default_value=True, callback=actions.on_gender_ratio_toggle)
+                                dpg.add_input_float(tag="gender_ratio", callback=actions.mark_dirty, width=140, min_value=0.0, max_value=100.0, min_clamped=True, max_clamped=True, step=0.1, format="%.1f")
                             with dpg.group():
                                 dpg.add_text("Cry ID")
                                 with dpg.group(horizontal=True):
@@ -344,7 +344,7 @@ def _build_editor_tab(actions) -> None:
                                     dpg.add_button(label="▶", tag=TAGS["cry_play_btn"], callback=actions.play_selected_cry, width=40)
                                 with dpg.tooltip(TAGS["cry_play_btn"]):
                                     dpg.add_text("Play selected cry")
-                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=528, border=False):
+                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=560, border=False):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats, Types & Abilities"):
                 with dpg.group(horizontal=True):
@@ -400,17 +400,43 @@ def _build_editor_tab(actions) -> None:
                     dpg.add_image_button("tex_type2", tag=TAGS["type2_icon_btn"], width=64, height=32, callback=actions.open_type2_modal)
                 dpg.add_combo(["TYPE_NORMAL"], tag="type1", callback=actions.on_type_change, width=280, show=False)
                 dpg.add_combo([""], tag="type2", callback=actions.on_type_change, width=280, show=False)
-                dpg.add_combo(["ABILITY_NONE"], label="Ability 1", tag="ability1", callback=actions.mark_dirty, width=280)
-                dpg.add_combo(["ABILITY_NONE"], label="Ability 2", tag="ability2", callback=actions.mark_dirty, width=280)
-                dpg.add_combo(["ABILITY_NONE"], label="Hidden", tag="ability_hidden", callback=actions.mark_dirty, width=280)
-                with dpg.window(modal=True, show=False, tag=TAGS["type1_modal"], width=360, height=560, label="Select primary type"):
-                    with dpg.child_window(tag=TAGS["type1_list"], width=-1, height=470, border=False):
+                with dpg.window(
+                    show=False,
+                    modal=False,
+                    no_title_bar=True,
+                    no_resize=True,
+                    no_collapse=True,
+                    no_saved_settings=True,
+                    width=380,
+                    height=250,
+                    tag=TAGS["type1_modal"],
+                ):
+                    dpg.add_text("Select primary type")
+                    with dpg.child_window(tag=TAGS["type1_list"], width=-1, height=210, border=False):
                         pass
-                    dpg.add_button(label="Close", callback=actions.close_type_modals, width=120)
-                with dpg.window(modal=True, show=False, tag=TAGS["type2_modal"], width=360, height=560, label="Select secondary type"):
-                    with dpg.child_window(tag=TAGS["type2_list"], width=-1, height=470, border=False):
+                with dpg.window(
+                    show=False,
+                    modal=False,
+                    no_title_bar=True,
+                    no_resize=True,
+                    no_collapse=True,
+                    no_saved_settings=True,
+                    width=380,
+                    height=250,
+                    tag=TAGS["type2_modal"],
+                ):
+                    dpg.add_text("Select secondary type")
+                    with dpg.child_window(tag=TAGS["type2_list"], width=-1, height=210, border=False):
                         pass
-                    dpg.add_button(label="Close", callback=actions.close_type_modals, width=120)
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Ability 1")
+                    dpg.add_combo(["ABILITY_NONE"], tag="ability1", callback=actions.mark_dirty, width=280)
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Ability 2")
+                    dpg.add_combo(["ABILITY_NONE"], tag="ability2", callback=actions.mark_dirty, width=280)
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Hidden   ")
+                    dpg.add_combo(["ABILITY_NONE"], tag="ability_hidden", callback=actions.mark_dirty, width=280)
         with dpg.tab(label="Evolutions"):
                 with dpg.group(horizontal=True):
                     dpg.add_text("Method")
