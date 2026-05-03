@@ -79,9 +79,12 @@ TAGS = {
     "delete_work_modal": "delete_work_modal",
     "delete_work_text": "delete_work_text",
     "editor_tabs": "editor_tabs",
+    "editor_mode_spacer": "editor_mode_spacer",
+    "editor_side_icon_img": "editor_side_icon_img",
     "tab_general": "tab_general",
     "description_counter": "description_counter",
     "settings_fab": "settings_fab",
+    "shortcuts_fab": "shortcuts_fab",
     "settings_fab_window": "settings_fab_window",
     "settings_modal": "settings_modal",
     "settings_theme": "settings_theme",
@@ -127,19 +130,38 @@ def build_layout(actions) -> None:
             no_collapse=True,
             no_background=True,
             no_focus_on_appearing=True,
-            width=92,
+            width=210,
             height=92,
             pos=(1450, 760),
         ):
-            dpg.add_button(
-                label="⚙",
-                tag=TAGS["settings_fab"],
-                width=92,
-                height=92,
-                callback=actions.open_settings_modal,
-            )
-            with dpg.tooltip(TAGS["settings_fab"]):
-                dpg.add_text("Settings")
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="KB",
+                    tag=TAGS["shortcuts_fab"],
+                    width=92,
+                    height=92,
+                )
+                with dpg.tooltip(TAGS["shortcuts_fab"]):
+                    dpg.add_text("Keyboard shortcuts")
+                    dpg.add_separator()
+                    dpg.add_text("Ctrl+F  Focus search")
+                    dpg.add_text("Ctrl+N  New species")
+                    dpg.add_text("Ctrl+D  Duplicate species")
+                    dpg.add_text("Ctrl+S  Validate")
+                    dpg.add_text("Ctrl+R  Generate dry-run")
+                    dpg.add_text("Ctrl+Enter  Apply changes")
+                    dpg.add_text("Delete  Open delete confirm")
+                    dpg.add_text("Ctrl+,  Open settings")
+                dpg.add_spacer(width=2)
+                dpg.add_button(
+                    label="⚙",
+                    tag=TAGS["settings_fab"],
+                    width=92,
+                    height=92,
+                    callback=actions.open_settings_modal,
+                )
+                with dpg.tooltip(TAGS["settings_fab"]):
+                    dpg.add_text("Settings")
 
         with dpg.window(modal=True, show=False, autosize=True, tag=TAGS["settings_modal"], width=560, label="Settings"):
             dpg.add_text("Theme")

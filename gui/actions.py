@@ -65,6 +65,7 @@ class GuiActions:
         self._icon_anim_interval = 0.33
         self._icon_anim_last = 0.0
         self._icon_anim_frame = 0
+        self._shortcut_last_trigger: dict[str, float] = {}
         self._build_thread: threading.Thread | None = None
         self._build_result: BuildResult | None = None
         self._build_output_buffer: list[str] = []
@@ -726,6 +727,8 @@ class GuiActions:
             self._evo_tooltip_frame = 1 - self._evo_tooltip_frame
             self._refresh_evo_tooltip_image(hover_idx)
 
+        self._handle_keyboard_shortcuts(now)
+
         if self.state.project_loaded and now - self._stats_radar_last_tick >= self._stats_radar_refresh_interval:
             self._stats_radar_last_tick = now
             self._refresh_stats_radar()
@@ -843,13 +846,15 @@ class GuiActions:
         self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
         self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
         if dpg.does_item_exist(TAGS["settings_fab"]):
-            fab_w = 92
+            fab_w = 210
             fab_h = 92
             fab_x = max(2, viewport_w - fab_w - 6)
             fab_y = max(2, viewport_h - fab_h - 6)
             if dpg.does_item_exist(TAGS.get("settings_fab_window", "")):
                 dpg.configure_item(TAGS["settings_fab_window"], pos=(fab_x, fab_y), width=fab_w, height=fab_h)
-            dpg.configure_item(TAGS["settings_fab"], width=fab_w, height=fab_h)
+            dpg.configure_item(TAGS["shortcuts_fab"], width=92, height=fab_h)
+            dpg.configure_item(TAGS["settings_fab"], width=92, height=fab_h)
+            self._bind_settings_button_theme(TAGS["shortcuts_fab"])
             self._bind_settings_button_theme(TAGS["settings_fab"])
         self._refresh_stats_radar()
 
@@ -1702,6 +1707,106 @@ class GuiActions:
         self.state.selected_species_constant = data["constant_name"]
         self._refresh_type_icons()
         self.mark_dirty()
+
+    @staticmethod
+    def _base_without_numeric_suffix(value: str) -> str:
+        text = str(value or "").strip()
+        m = re.match(r"^(.*)_\d+$", text)
+        return m.group(1) if m else text
+
+    @staticmethod
+    def _next_unique_with_suffix(base: str, existing: set[str], start: int = 2) -> str:
+        candidate = str(base or "").strip()
+        if candidate and candidate not in existing:
+            return candidate
+        n = max(start, 2)
+        while True:
+            candidate = f"{base}_{n}"
+            if candidate not in existing:
+                return candidate
+            n += 1
+
+    def duplicate_selected_species(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.project_loaded:
+            self._set_message("Load a project first")
+            return
+        if not self.state.selected_species_constant:
+            self._set_message("Select a species to duplicate")
+            return
+
+        source = next(
+            (x for x in self.state.species_list if x.get("constant_name") == self.state.selected_species_constant),
+            None,
+        )
+        if source is None:
+            self._set_message("Could not find selected species")
+            return
+
+        data = self._read_editor_from_ui()
+        data["mode"] = "add"
+
+        existing_constants = {str(x.get("constant_name") or "").strip() for x in self.state.species_list if str(x.get("constant_name") or "").strip()}
+        existing_folders = {str(x.get("folder_name") or "").strip() for x in self.state.species_list if str(x.get("folder_name") or "").strip()}
+
+        base_constant = self._base_without_numeric_suffix(str(source.get("constant_name") or "SPECIES_NEW"))
+        new_constant = self._next_unique_with_suffix(base_constant, existing_constants, start=2)
+        base_folder = self._base_without_numeric_suffix(str(source.get("folder_name") or "new_species").lower())
+        new_folder = self._next_unique_with_suffix(base_folder, existing_folders, start=2)
+
+        data["constant_name"] = new_constant
+        data["folder_name"] = new_folder.lower()
+        data["species_name"] = str(source.get("species_name") or data.get("species_name") or "New species")
+
+        self._suspend_dirty_events = True
+        try:
+            for key, value in data.items():
+                tag = "edit_mode" if key == "mode" else key
+                if dpg.does_item_exist(tag):
+                    dpg.set_value(tag, value)
+        finally:
+            self._suspend_dirty_events = False
+
+        self._ensure_draft_species_in_list(data["constant_name"], data["species_name"], data["folder_name"])
+        self.filter_species()
+        dpg.set_value(
+            TAGS["species_list"],
+            self._species_label({"constant_name": data["constant_name"], "species_name": data["species_name"]}),
+        )
+        self.state.selected_species_constant = data["constant_name"]
+        dpg.configure_item(TAGS["delete_btn"], show=False)
+        self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
+        self.mark_dirty()
+        self._set_message(f"Duplicated as {data['constant_name']}")
+
+    def _shortcut_pressed(self, key: str, now: float, cooldown: float = 0.22) -> bool:
+        last = self._shortcut_last_trigger.get(key, 0.0)
+        if now - last < cooldown:
+            return False
+        self._shortcut_last_trigger[key] = now
+        return True
+
+    def _handle_keyboard_shortcuts(self, now: float) -> None:
+        try:
+            ctrl = bool(dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl))
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_F) and self._shortcut_pressed("ctrl_f", now):
+                if dpg.does_item_exist(TAGS["search_input"]):
+                    dpg.focus_item(TAGS["search_input"])
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_N) and self._shortcut_pressed("ctrl_n", now):
+                self.new_species()
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_D) and self._shortcut_pressed("ctrl_d", now):
+                self.duplicate_selected_species()
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_S) and self._shortcut_pressed("ctrl_s", now):
+                self.validate_species()
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_R) and self._shortcut_pressed("ctrl_r", now):
+                self.generate_dry_run()
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_Return) and self._shortcut_pressed("ctrl_enter", now):
+                self.show_confirm_modal()
+            if dpg.is_key_pressed(dpg.mvKey_Delete) and self._shortcut_pressed("delete", now):
+                self.show_delete_modal()
+            if ctrl and dpg.is_key_pressed(dpg.mvKey_Comma) and self._shortcut_pressed("ctrl_comma", now):
+                self.open_settings_modal()
+        except Exception:
+            return
 
     def add_levelup_move(self, sender=None, app_data=None, user_data=None) -> None:
         level = int(dpg.get_value("move_level") or 1)
