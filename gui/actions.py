@@ -393,6 +393,10 @@ class GuiActions:
             vx = local_x - cx
             vy = local_y - cy
             if abs(vx) + abs(vy) > 0.001:
+                dist = math.hypot(vx, vy)
+                if dist > (radius + 14.0):
+                    self._radar_mouse_was_down = left_down
+                    return
                 mouse_angle = math.atan2(vy, vx)
                 nearest_idx = 0
                 nearest_delta = 1e9
@@ -403,7 +407,8 @@ class GuiActions:
                     if delta < nearest_delta:
                         nearest_delta = delta
                         nearest_idx = idx
-                self._radar_drag_index = nearest_idx
+                if nearest_delta <= math.radians(16.0):
+                    self._radar_drag_index = nearest_idx
 
         if left_down and self._radar_drag_index is not None:
             idx = self._radar_drag_index
