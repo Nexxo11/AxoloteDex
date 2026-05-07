@@ -2,6 +2,10 @@
 
 > Safe species editing for `pokeemerald-expansion`.
 
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f)
+![Workflow](https://img.shields.io/badge/Workflow-Validate%20%E2%86%92%20Dry--Run%20%E2%86%92%20Apply-0A66C2)
+
 AxoloteDex is a desktop tool focused on real production workflows: add, edit, and delete species with validation, dry-run planning, lint checks, backups, and rollback support.
 
 ---
@@ -75,9 +79,9 @@ python3 -m venv .venv
 
 ## Build
 
-### Build Windows executable (`.exe`)
+### Windows build
 
-Use a Windows machine:
+Build the standalone app on a Windows machine:
 
 ```powershell
 ./scripts/build_windows.ps1
@@ -89,11 +93,11 @@ CMD alternative:
 scripts\build_windows.bat
 ```
 
-Output:
+Expected output:
 
 - `dist/AxoloteDex.exe`
 
-Notes:
+Build notes:
 
 - Uses `--onefile --windowed`.
 - Build on Windows for native compatibility.
@@ -119,6 +123,11 @@ Standard flow:
 5. Review warnings/errors/risk in the change plan.
 6. Click `Apply changes`.
 7. Run `Build project` (recommended).
+
+Expected generated files after DRY-RUN:
+
+- `output/change_plan.md`
+- `output/change_plan.json`
 
 Behavior details:
 
