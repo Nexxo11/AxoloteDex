@@ -327,18 +327,26 @@ def _apply_palette_transform(
     mode = palette_mode.lower()
     if mode in {"raw", "none", "off"}:
         return rgba
+    if kind == "back":
+        # In pokeemerald-expansion, many back sprites are authored with shiny-indexed colors.
+        # For preview "normal", remap shiny->normal; for preview "shiny", keep as-is.
+        normal_palette, _ = _load_palette_with_variant(sprite_folder, "normal", palette_variant)
+        shiny_palette, _ = _load_palette_with_variant(sprite_folder, "shiny", palette_variant)
+        if mode == "normal":
+            if normal_palette and shiny_palette:
+                return _apply_palette_transform_back_indexed(rgba, shiny_palette, normal_palette)
+            return rgba
+        if mode == "shiny":
+            return rgba
+
+    if mode == "normal":
+        return rgba
     target_palette, _ = _load_palette_with_variant(sprite_folder, mode, palette_variant)
     if not target_palette:
         return rgba
     source_palette, _ = _load_palette_with_variant(sprite_folder, "normal", palette_variant)
     if not source_palette:
         source_palette = target_palette
-
-    if kind == "back":
-        return _apply_palette_transform_back_indexed(rgba, source_palette, target_palette)
-
-    if mode == "normal":
-        return rgba
 
     px = rgba.load()
     w, h = rgba.size

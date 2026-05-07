@@ -1,182 +1,229 @@
 # AxoloteDex (ASA)
 
-Herramienta para usuarios de `pokeemerald-expansion` que permite **agregar, editar y eliminar especies** con flujo seguro de DRY-RUN, validaciones, lint y rollback.
+> Safe species editing for `pokeemerald-expansion`.
 
-Esta app esta pensada para trabajo real sobre proyectos de expansion, no solo para exportar datos.
+AxoloteDex is a desktop tool focused on real production workflows: add, edit, and delete species with validation, dry-run planning, lint checks, backups, and rollback support.
 
-## Que hace la herramienta
+---
 
-- GUI principal para edicion de especies con preview de sprites.
-- Flujo seguro obligatorio: `Validar -> Generar DRY-RUN -> Aplicar cambios`.
-- Plan de cambios antes de escribir (`output/change_plan.md` y `output/change_plan.json`).
-- Backups automaticos antes de aplicar (`backups/YYYYMMDD_HHMMSS/`).
-- Lint que bloquea cambios inseguros o inconsistentes.
-- Check de compilacion (`make -jN`) desde CLI o GUI.
-- Modos de borrado avanzado (safe, replace+delete, force-delete).
+## Table of Contents
 
-## Requisitos
+- [Why AxoloteDex](#why-axolotedex)
+- [Core Workflow](#core-workflow)
+- [Features at a Glance](#features-at-a-glance)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Build](#build)
+- [How to Use](#how-to-use)
+- [Delete Modes](#delete-modes)
+- [Rollback](#rollback)
+- [Troubleshooting](#troubleshooting)
+- [Expected Assets](#expected-assets)
+- [Safety Notes](#safety-notes)
 
-- Python 3.10+ (recomendado 3.11 o 3.12)
-- Proyecto `pokeemerald-expansion` funcional
-- En Linux/macOS: `make` para build check
+---
 
-## Instalacion rapida
+## Why AxoloteDex
 
-Desde la carpeta del proyecto ASA:
+Editing species manually across a `pokeemerald-expansion` codebase is error-prone. AxoloteDex reduces that risk by forcing a safe, inspectable change flow before any file write happens.
+
+---
+
+## Core Workflow
+
+```text
+Validate -> Generate DRY-RUN -> Review Plan -> Apply -> Build Check
+```
+
+Without `--apply`, AxoloteDex does not modify your target repository.
+
+---
+
+## Features at a Glance
+
+| Area | What you get |
+|---|---|
+| Species editing | GUI editor with sprite preview |
+| Change safety | Validation + lint gate before apply |
+| Planning | `output/change_plan.md` and `output/change_plan.json` |
+| Backup | Automatic backup before real writes (`backups/YYYYMMDD_HHMMSS/`) |
+| Build confidence | Optional build check from GUI or CLI |
+| Deletion control | `safe`, `replace+delete`, and `force-delete` modes |
+
+---
+
+## Requirements
+
+- Python `3.10+` (recommended: `3.11` or `3.12`)
+- A working `pokeemerald-expansion` project
+- Linux/macOS: `make` available for build checks
+
+---
+
+## Quick Start
+
+From the ASA project root:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install dearpygui pillow
+.venv/bin/python gui_app.py
 ```
 
-## Build para Windows (.exe)
+---
 
-Para generar un ejecutable compacto para testers en Windows:
+## Build
 
-1. Copia este proyecto a una maquina Windows.
-2. Abre PowerShell en la raiz del proyecto.
-3. Ejecuta:
+### Build Windows executable (`.exe`)
+
+Use a Windows machine:
 
 ```powershell
 ./scripts/build_windows.ps1
 ```
 
-Alternativa con CMD:
+CMD alternative:
 
 ```bat
 scripts\build_windows.bat
 ```
 
-Salida esperada:
+Output:
 
 - `dist/AxoloteDex.exe`
 
-Notas:
+Notes:
 
-- El build usa `--onefile --windowed` para reducir tamaño y evitar consola.
-- El ejecutable debe generarse en Windows para garantizar compatibilidad nativa.
+- Uses `--onefile --windowed`.
+- Build on Windows for native compatibility.
 
-## Uso recomendado (usuario final): GUI
+---
 
-Ejecuta:
+## How to Use
+
+### GUI (recommended)
+
+Run:
 
 ```bash
 .venv/bin/python gui_app.py
 ```
 
-Flujo normal:
+Standard flow:
 
-1. Carga la ruta de tu `pokeemerald-expansion`.
-2. Selecciona especie o crea una nueva en el editor.
-3. Pulsa `Validar`.
-4. Pulsa `Generar DRY-RUN`.
-5. Revisa `Change Plan` (errores/warnings/riesgo).
-6. Pulsa `Aplicar cambios`.
-7. (Opcional recomendado) Pulsa `Compilar proyecto`.
+1. Select your `pokeemerald-expansion` path.
+2. Choose an existing species or create a new one.
+3. Click `Validate`.
+4. Click `Generate DRY-RUN`.
+5. Review warnings/errors/risk in the change plan.
+6. Click `Apply changes`.
+7. Run `Build project` (recommended).
 
-Notas importantes:
+Behavior details:
 
-- Si cambias datos despues del DRY-RUN, la app puede regenerarlo automaticamente al aplicar.
-- Si faltan assets, se usa fallback y se reporta warning.
-- Si el lint detecta errores, no se aplica nada.
+- If data changes after DRY-RUN, AxoloteDex can regenerate the plan before apply.
+- Missing assets use fallback behavior and produce warnings.
+- If lint fails, apply is blocked.
 
-## Uso por CLI
+### CLI
 
-### 1) Analizar estructura del proyecto
+#### 1) Analyze expansion structure
 
 ```bash
 python3 analyze_expansion.py
 ```
 
-Genera notas de investigacion y valida estructura base sin modificar el repo objetivo.
-
-### 2) Exportar especies
+#### 2) Export species
 
 ```bash
 python3 export_species.py ./pokeemerald-expansion
 ```
 
-Salidas:
+Generated files:
 
 - `output/species_index.json`
 - `output/species_summary.md`
 - `output/parse_warnings.md`
 
-### 3) Generar plan de cambio (DRY-RUN)
+#### 3) DRY-RUN plan only
 
 ```bash
-python3 apply_species_change.py <ruta_proyecto> <archivo.json>
+python3 apply_species_change.py <project_path> <change_file.json>
 ```
 
-Ejemplo:
+Example:
 
 ```bash
 python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json
 ```
 
-### 4) Aplicar cambios reales
+#### 4) Apply changes
 
 ```bash
 python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json --apply
 ```
 
-### 5) Aplicar y compilar
+#### 5) Apply + build check
 
 ```bash
 python3 apply_species_change.py ./pokeemerald-expansion examples/new_species.example.json --apply --build-check
 ```
 
-Salida de build:
+Build artifacts:
 
 - `output/build_log.txt`
 - `output/build_summary.md`
 
-## Borrado de especies (GUI)
+---
 
-La GUI soporta modos de borrado:
+## Delete Modes
 
-- `safe`: bloquea si encuentra referencias externas.
-- `replace+delete`: intenta reemplazar referencias y luego borrar.
-- `force-delete`: elimina aunque queden referencias (riesgo alto).
+- `safe`: blocks delete when external references are detected.
+- `replace+delete`: attempts reference replacement, then deletes.
+- `force-delete`: deletes even with remaining references (high risk).
 
-Recomendacion: usar siempre `safe` o `replace+delete` y compilar al final.
+Best practice: prefer `safe` or `replace+delete`, then run a build check.
 
-## Rollback de backup
+---
 
-Ver preview de rollback (sin aplicar):
+## Rollback
+
+Preview rollback (no writes):
 
 ```bash
 python3 rollback_backup.py ./pokeemerald-expansion --latest --remove-path graphics/pokemon/testmon
 ```
 
-Aplicar rollback real:
+Apply rollback:
 
 ```bash
 python3 rollback_backup.py ./pokeemerald-expansion --latest --remove-path graphics/pokemon/testmon --apply
 ```
 
-`--remove-path` ayuda a limpiar carpetas creadas por altas nuevas.
+`--remove-path` is useful to clean folders created by newly added species.
 
-## Comandos de depuracion y soporte
+---
 
-Si algo falla, estos comandos ayudan a diagnosticar rapido:
+## Troubleshooting
+
+Run these commands when something looks wrong:
 
 ```bash
-# 1) Ejecutar pruebas de seguridad del editor
+# Editor safety tests
 python3 -m unittest tests.test_species_editor_safety -v
 
-# 2) Ejecutar pruebas de GUI (requiere dearpygui instalado)
+# GUI dry-run tests (requires dearpygui)
 python3 -m unittest tests.test_gui_dry_run -v
 
-# 3) Levantar GUI desde venv
+# Launch GUI
 .venv/bin/python gui_app.py
 
-# 4) Verificar que la expansion compile
+# Verify expansion build
 make -j$(nproc)
 ```
 
-Archivos clave para revisar cuando hay errores:
+Check these files first:
 
 - `output/change_plan.md`
 - `output/change_plan.json`
@@ -184,9 +231,11 @@ Archivos clave para revisar cuando hay errores:
 - `output/build_log.txt`
 - `output/build_summary.md`
 
-## Estructura de assets esperada
+---
 
-Para alta/edicion de especie se esperan estos archivos en el folder de assets:
+## Expected Assets
+
+Species asset folder should include:
 
 - `front.png`
 - `back.png`
@@ -195,22 +244,19 @@ Para alta/edicion de especie se esperan estos archivos en el folder de assets:
 - `normal.pal`
 - `shiny.pal`
 
-Si alguno falta, el sistema intenta fallback con una especie existente y lo deja registrado como warning.
+If files are missing, fallback assets are used and warnings are recorded.
 
-## Seguridad y limites
+---
 
-- Sin `--apply`, nunca se escriben cambios (solo plan).
-- Con `--apply`, siempre se genera backup antes de tocar archivos.
-- El parser usa enfoque por bloques/regex (no parser C completo).
-- Casos de macros muy complejos pueden generar warnings en lugar de abortar.
+## Safety Notes
 
-## Consejos para evitar roturas
+- No `--apply` means no file writes.
+- With `--apply`, backup is always created first.
+- Parser is block/regex-based (not a full C parser).
+- Complex macro patterns may emit warnings instead of hard failures.
 
-- No uses `force-delete` salvo que sepas exactamente el impacto.
-- Compila despues de cualquier borrado o cambio grande.
-- Si una especie esta muy referenciada, prefiere `replace+delete`.
-- Mantene versionados `output/` y backups locales solo para debugging, no para release.
+---
 
 ## Version
 
-Interfaz marcada como `AxoloteDex v0.6.0`.
+Current GUI label: `AxoloteDex v0.6.0`.

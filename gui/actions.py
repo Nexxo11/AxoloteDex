@@ -864,6 +864,21 @@ class GuiActions:
                     self.close_type_modals()
         self._type_modal_mouse_was_down = left_down
 
+    def on_mouse_wheel(self, sender=None, app_data=None, user_data=None) -> None:
+        if not self.state.project_loaded:
+            return
+        panel_tag = TAGS.get("preview_panel")
+        if not panel_tag or not dpg.does_item_exist(panel_tag) or not dpg.is_item_hovered(panel_tag):
+            return
+        try:
+            wheel = float(app_data or 0.0)
+        except Exception:
+            wheel = 0.0
+        if abs(wheel) < 0.01:
+            return
+        self.state.preview_frame_index = 1 - int(self.state.preview_frame_index or 0)
+        self.request_preview_refresh()
+
     def request_preview_refresh(self) -> None:
         self._preview_pending = True
 
@@ -1010,6 +1025,9 @@ class GuiActions:
             dpg.configure_item(TAGS["type2_list"], width=max(280, min(520, workspace_w - 220)), height=max(170, min(240, int(row_h * 0.32))))
         self._bind_flat_icon_theme(TAGS["type1_icon_btn"])
         self._bind_flat_icon_theme(TAGS["type2_icon_btn"])
+        self._bind_flat_icon_theme(TAGS["preview_front_img"])
+        self._bind_flat_icon_theme(TAGS["preview_back_img"])
+        self._bind_flat_icon_theme(TAGS["preview_icon_img"])
         if dpg.does_item_exist(TAGS["settings_fab"]):
             fab_w = 210
             fab_h = 92
@@ -1255,7 +1273,10 @@ class GuiActions:
             assets_folder = str(dpg.get_value("assets_folder") or "").strip()
             frame_index = int(self.state.preview_frame_index or 0)
             icon_frame_index = self._icon_anim_frame
-            palette_mode = "raw"
+            palette_mode = str(self.state.preview_palette_mode or "normal").strip().lower()
+            if palette_mode not in {"normal", "shiny"}:
+                palette_mode = "normal"
+                self.state.preview_palette_mode = "normal"
 
             preview = resolve_preview_paths(Path(self.state.project_path), folder_name, assets_folder, palette_mode=palette_mode)
             back_frame_index = frame_index if palette_mode == "normal" else frame_index
@@ -1263,7 +1284,7 @@ class GuiActions:
             new_back, bw, bh = self._update_texture("back", preview.back_path, back_frame_index, palette_mode, preview.palette_variant)
             icon_payload: tuple[str, int, int] | None = None
             if dpg.does_item_exist(TAGS["preview_icon_img"]):
-                icon_payload = self._update_texture("icon", preview.icon_path, icon_frame_index, palette_mode, preview.palette_variant)
+                icon_payload = self._update_texture("icon", preview.icon_path, icon_frame_index, "normal", preview.palette_variant)
             footprint_payload: tuple[str, int, int] | None = None
             if dpg.does_item_exist(TAGS["preview_footprint_img"]):
                 footprint_payload = self._load_footprint_texture(folder_name, assets_folder)
@@ -1293,9 +1314,8 @@ class GuiActions:
                 except Exception:
                     pass
 
-            pal_msg = f"Modo preview: {palette_mode}" if palette_mode in {"normal", "shiny"} else ""
             warning = preview.warning or ""
-            dpg.set_value(TAGS["preview_warning"], (warning + " | " + pal_msg).strip(" |"))
+            dpg.set_value(TAGS["preview_warning"], warning)
             if warning:
                 dpg.configure_item(TAGS["preview_warning"], color=PALETTE["warning"])
             else:
@@ -1926,6 +1946,7 @@ class GuiActions:
             self.state.selected_teachable_index = -1
 
     def select_species(self, sender=None, app_data=None, user_data=None) -> None:
+        self.state.preview_palette_mode = "normal"
         value = dpg.get_value(TAGS["species_list"])
         if not value:
             return
@@ -2184,6 +2205,7 @@ class GuiActions:
         self.request_preview_refresh()
 
     def new_species(self, sender=None, app_data=None, user_data=None) -> None:
+        self.state.preview_palette_mode = "normal"
         data = default_editor_data()
         data["mode"] = "add"
         draft_constant = self._next_draft_species_constant()
@@ -2257,6 +2279,7 @@ class GuiActions:
             self._set_message("Could not find selected species")
             return
 
+        self.state.preview_palette_mode = "normal"
         data = self._read_editor_from_ui()
         data["mode"] = "add"
 
@@ -2594,6 +2617,11 @@ class GuiActions:
         self.state.preview_frame_index = 1 - int(self.state.preview_frame_index or 0)
         if dpg.does_item_exist(TAGS["preview_frame_toggle"]):
             dpg.set_value(TAGS["preview_frame_toggle"], f"Frame: {self.state.preview_frame_index + 1}")
+        self.request_preview_refresh()
+
+    def toggle_preview_palette(self, sender=None, app_data=None, user_data=None) -> None:
+        mode = str(self.state.preview_palette_mode or "normal").strip().lower()
+        self.state.preview_palette_mode = "shiny" if mode == "normal" else "normal"
         self.request_preview_refresh()
 
     def _editor_payload(self) -> dict:

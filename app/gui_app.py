@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import dearpygui.dearpygui as dpg
+from PIL import Image
 
 from gui.actions import GuiActions
 from gui.components import TAGS, build_layout
@@ -55,14 +57,54 @@ def main() -> None:
         with dpg.font_registry():
             settings_icon_font = dpg.add_font(str(symbol_font_path), 54)
 
+    def _svg_to_texture_data(path: Path, size: int = 16) -> tuple[int, int, list[float]] | None:
+        try:
+            import cairosvg
+        except Exception:
+            return None
+        if not path.exists():
+            return None
+        png_bytes = cairosvg.svg2png(url=str(path), output_width=size, output_height=size)
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        w, h = img.size
+        raw = img.tobytes()
+        data: list[float] = []
+        for i in range(0, len(raw), 4):
+            data.extend([
+                raw[i] / 255.0,
+                raw[i + 1] / 255.0,
+                raw[i + 2] / 255.0,
+                raw[i + 3] / 255.0,
+            ])
+        return w, h, data
+
     with dpg.texture_registry(show=False, tag="tex_registry"):
         empty = [0.2, 0.2, 0.2, 1.0] * (32 * 32)
+        empty_icon = [0.0, 0.0, 0.0, 0.0] * (16 * 16)
         dpg.add_static_texture(32, 32, empty, tag="tex_front")
         dpg.add_static_texture(32, 32, empty, tag="tex_back")
         dpg.add_static_texture(32, 32, empty, tag="tex_icon")
         dpg.add_static_texture(32, 32, empty, tag="tex_footprint")
         dpg.add_static_texture(32, 32, empty, tag="tex_type1")
         dpg.add_static_texture(32, 32, empty, tag="tex_type2")
+        dpg.add_static_texture(16, 16, empty_icon, tag="tex_ic_keyboard")
+        dpg.add_static_texture(16, 16, empty_icon, tag="tex_ic_wheel_up")
+        dpg.add_static_texture(16, 16, empty_icon, tag="tex_ic_wheel_down")
+
+        icon_dir = Path.cwd() / "gui/icons"
+        icon_specs = [
+            ("tex_ic_keyboard", icon_dir / "keyboard.svg"),
+            ("tex_ic_wheel_up", icon_dir / "wheel_up.svg"),
+            ("tex_ic_wheel_down", icon_dir / "wheel_down.svg"),
+        ]
+        for tex_tag, svg_path in icon_specs:
+            payload = _svg_to_texture_data(svg_path, size=16)
+            if payload is None:
+                continue
+            w, h, data = payload
+            if dpg.does_item_exist(tex_tag):
+                dpg.delete_item(tex_tag)
+            dpg.add_static_texture(w, h, data, tag=tex_tag)
     build_layout(actions)
     dark_theme = create_dark_theme()
     light_theme = create_light_theme()
@@ -147,6 +189,8 @@ def main() -> None:
     viewport_h = int(cfg.get("window_height", 880)) if isinstance(cfg.get("window_height"), int) else 880
     dpg.create_viewport(title="AxoloteDex", width=viewport_w, height=viewport_h)
     dpg.setup_dearpygui()
+    with dpg.handler_registry():
+        dpg.add_mouse_wheel_handler(callback=actions.on_mouse_wheel)
     dpg.show_viewport()
     dpg.set_primary_window("main_window", True)
     while dpg.is_dearpygui_running():

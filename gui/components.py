@@ -11,6 +11,7 @@ TAGS = {
     "general_left": "general_left",
     "general_right": "general_right",
     "preview_frame_toggle": "preview_frame_toggle",
+    "preview_panel": "preview_panel",
     "project_input": "project_input",
     "project_status": "project_status",
     "species_count": "species_count",
@@ -142,16 +143,24 @@ def build_layout(actions) -> None:
                     height=92,
                 )
                 with dpg.tooltip(TAGS["shortcuts_fab"]):
-                    dpg.add_text("Keyboard shortcuts")
+                    with dpg.group(horizontal=True):
+                        dpg.add_image("tex_ic_keyboard", width=16, height=16)
+                        dpg.add_text("Keyboard & Mouse")
                     dpg.add_separator()
-                    dpg.add_text("Ctrl+F  Focus search")
-                    dpg.add_text("Ctrl+N  New species")
-                    dpg.add_text("Ctrl+D  Duplicate species")
-                    dpg.add_text("Ctrl+S  Validate")
-                    dpg.add_text("Ctrl+R  Generate dry-run")
-                    dpg.add_text("Ctrl+Enter  Apply changes")
-                    dpg.add_text("Delete  Open delete confirm")
-                    dpg.add_text("Ctrl+,  Open settings")
+                    dpg.add_text("[Ctrl+F]      Focus search")
+                    dpg.add_text("[Ctrl+N]      New species")
+                    dpg.add_text("[Ctrl+D]      Duplicate species")
+                    dpg.add_text("[Ctrl+S]      Validate")
+                    dpg.add_text("[Ctrl+R]      Generate dry-run")
+                    dpg.add_text("[Ctrl+Enter]  Apply changes")
+                    dpg.add_text("[Delete]      Open delete confirm")
+                    dpg.add_text("[Ctrl+,]      Open settings")
+                    with dpg.group(horizontal=True):
+                        dpg.add_image("tex_ic_wheel_up", width=16, height=16)
+                        dpg.add_text("Wheel Up      Toggle preview frame")
+                    with dpg.group(horizontal=True):
+                        dpg.add_image("tex_ic_wheel_down", width=16, height=16)
+                        dpg.add_text("Wheel Down    Toggle preview frame")
                 dpg.add_spacer(width=2)
                 dpg.add_button(
                     label="⚙",
@@ -344,7 +353,7 @@ def _build_editor_tab(actions) -> None:
                                     dpg.add_button(label="▶", tag=TAGS["cry_play_btn"], callback=actions.play_selected_cry, width=40)
                                 with dpg.tooltip(TAGS["cry_play_btn"]):
                                     dpg.add_text("Play selected cry")
-                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=560, border=False):
+                    with dpg.child_window(tag=TAGS["general_right"], width=360, height=560, border=False, no_scrollbar=True):
                         _build_inline_preview_block(actions)
         with dpg.tab(label="Stats, Types & Abilities"):
                 with dpg.group(horizontal=True):
@@ -513,10 +522,8 @@ def _build_editor_tab(actions) -> None:
 
 
 def _build_inline_preview_block(actions) -> None:
-    with dpg.group(horizontal=True):
-        dpg.add_button(label="Change Frame", tag=TAGS["preview_frame_toggle"], callback=actions.toggle_preview_frame)
     dpg.add_text("", tag=TAGS["preview_warning"], wrap=900)
-    with dpg.child_window(width=-1, height=276, border=False, no_scrollbar=True):
+    with dpg.child_window(tag=TAGS["preview_panel"], width=-1, height=300, border=False, no_scrollbar=True):
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             dpg.add_image("tex_front", width=112, height=112, tag=TAGS["preview_front_img"])
@@ -524,11 +531,20 @@ def _build_inline_preview_block(actions) -> None:
             dpg.add_image("tex_back", width=112, height=112, tag=TAGS["preview_back_img"])
             dpg.add_spacer(width=12)
             dpg.add_image("tex_icon", width=112, height=112, tag=TAGS["preview_icon_img"])
-        dpg.add_spacer(height=12)
+        dpg.add_spacer(height=8)
         dpg.add_text("Footprint", color=(168, 163, 184, 255))
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             dpg.add_image("tex_footprint", width=96, height=96, tag=TAGS["preview_footprint_img"])
+    with dpg.item_handler_registry(tag="preview_front_click_handler"):
+        dpg.add_item_clicked_handler(callback=actions.toggle_preview_palette)
+    dpg.bind_item_handler_registry(TAGS["preview_front_img"], "preview_front_click_handler")
+    with dpg.item_handler_registry(tag="preview_back_click_handler"):
+        dpg.add_item_clicked_handler(callback=actions.toggle_preview_palette)
+    dpg.bind_item_handler_registry(TAGS["preview_back_img"], "preview_back_click_handler")
+    with dpg.item_handler_registry(tag="preview_icon_click_handler"):
+        dpg.add_item_clicked_handler(callback=actions.toggle_preview_palette)
+    dpg.bind_item_handler_registry(TAGS["preview_icon_img"], "preview_icon_click_handler")
 
 
 def _build_plan_tab(actions) -> None:
