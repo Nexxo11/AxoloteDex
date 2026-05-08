@@ -28,6 +28,7 @@ from gui.themes import PALETTE
 
 
 class GuiActions:
+    MAX_CONSTANT_NAME_LEN = 41
     MAX_SPECIES_NAME_LEN = 12
     MAX_DESCRIPTION_LEN = 180
 
@@ -57,6 +58,9 @@ class GuiActions:
         self._stats_radar_refresh_interval = 0.28
         self._stats_radar_last_tick = 0.0
         self._last_valid_description: str = ""
+        self._constant_name_readonly_locked: bool = False
+        self._species_name_readonly_locked: bool = False
+        self._description_readonly_locked: bool = False
         self._theme_switcher = None
         self._cry_audio_map: dict[str, Path] = {}
         self._cry_player_proc: subprocess.Popen | None = None
@@ -2111,14 +2115,34 @@ class GuiActions:
         return data
 
     def _enforce_text_limits(self) -> None:
-        if dpg.does_item_exist("species_name"):
-            val = str(dpg.get_value("species_name") or "")
-            if len(val) > self.MAX_SPECIES_NAME_LEN:
+        if dpg.does_item_exist("constant_name"):
+            val = self._normalize_constant_name_text(str(dpg.get_value("constant_name") or ""))
+            if str(dpg.get_value("constant_name") or "") != val:
                 self._suspend_dirty_events = True
                 try:
-                    dpg.set_value("species_name", val[: self.MAX_SPECIES_NAME_LEN])
+                    dpg.set_value("constant_name", val)
                 finally:
                     self._suspend_dirty_events = False
+            self._sync_text_readonly(
+                item_tag="constant_name",
+                current_len=len(val),
+                max_len=self.MAX_CONSTANT_NAME_LEN,
+                lock_state_attr="_constant_name_readonly_locked",
+            )
+        if dpg.does_item_exist("species_name"):
+            val = self._normalize_species_name_text(str(dpg.get_value("species_name") or ""))
+            if str(dpg.get_value("species_name") or "") != val:
+                self._suspend_dirty_events = True
+                try:
+                    dpg.set_value("species_name", val)
+                finally:
+                    self._suspend_dirty_events = False
+            self._sync_text_readonly(
+                item_tag="species_name",
+                current_len=len(val),
+                max_len=self.MAX_SPECIES_NAME_LEN,
+                lock_state_attr="_species_name_readonly_locked",
+            )
         if dpg.does_item_exist("description"):
             val = self._normalize_description_text(str(dpg.get_value("description") or ""))
             if str(dpg.get_value("description") or "") != val:
@@ -2128,7 +2152,41 @@ class GuiActions:
                 finally:
                     self._suspend_dirty_events = False
             self._last_valid_description = val
+            self._sync_text_readonly(
+                item_tag="description",
+                current_len=len(val),
+                max_len=self.MAX_DESCRIPTION_LEN,
+                lock_state_attr="_description_readonly_locked",
+            )
             self._update_description_counter()
+
+    def _sync_text_readonly(self, item_tag: str, current_len: int, max_len: int, lock_state_attr: str) -> None:
+        if not dpg.does_item_exist(item_tag):
+            return
+        can_shrink = False
+        try:
+            if dpg.is_item_focused(item_tag):
+                can_shrink = bool(dpg.is_key_down(dpg.mvKey_Back) or dpg.is_key_down(dpg.mvKey_Delete))
+        except Exception:
+            can_shrink = False
+        should_lock = bool(current_len >= max_len and not can_shrink)
+        is_locked = bool(getattr(self, lock_state_attr))
+        if should_lock == is_locked:
+            return
+        dpg.configure_item(item_tag, readonly=should_lock)
+        setattr(self, lock_state_attr, should_lock)
+
+    @classmethod
+    def _normalize_constant_name_text(cls, text: str) -> str:
+        if len(text) > cls.MAX_CONSTANT_NAME_LEN:
+            return text[: cls.MAX_CONSTANT_NAME_LEN]
+        return text
+
+    @classmethod
+    def _normalize_species_name_text(cls, text: str) -> str:
+        if len(text) > cls.MAX_SPECIES_NAME_LEN:
+            return text[: cls.MAX_SPECIES_NAME_LEN]
+        return text
 
     def _update_description_counter(self) -> None:
         counter_tag = TAGS.get("description_counter")
@@ -2183,20 +2241,29 @@ class GuiActions:
     def on_description_change(self, sender=None, app_data=None, user_data=None) -> None:
         if self._suspend_dirty_events:
             return
-        current = str(app_data if app_data is not None else dpg.get_value("description") or "")
-        normalized = current.replace("\r\n", "\n").replace("\r", "\n")
-        if len(normalized) > self.MAX_DESCRIPTION_LEN:
-            normalized = self._last_valid_description
+        if isinstance(app_data, str):
+            current = app_data
         else:
-            self._last_valid_description = normalized
+            current = str(dpg.get_value("description") or "")
+        normalized = self._normalize_description_text(current)
+        self._last_valid_description = normalized
         if normalized != current:
             self._suspend_dirty_events = True
             try:
                 dpg.set_value("description", normalized)
             finally:
                 self._suspend_dirty_events = False
+        self._sync_text_readonly(
+            item_tag="description",
+            current_len=len(normalized),
+            max_len=self.MAX_DESCRIPTION_LEN,
+            lock_state_attr="_description_readonly_locked",
+        )
         self._update_description_counter()
         self.mark_dirty()
+
+    def on_description_edited(self, sender=None, app_data=None, user_data=None) -> None:
+        self.on_description_change(sender=sender, app_data=dpg.get_value("description"), user_data=user_data)
 
     def on_gender_ratio_toggle(self, sender=None, app_data=None, user_data=None) -> None:
         self._sync_gender_ratio_widgets()
@@ -2357,7 +2424,11 @@ class GuiActions:
                 self.generate_dry_run()
             if ctrl and dpg.is_key_pressed(dpg.mvKey_Return) and self._shortcut_pressed("ctrl_enter", now):
                 self.show_confirm_modal()
-            if dpg.is_key_pressed(dpg.mvKey_Delete) and self._shortcut_pressed("delete", now):
+            text_field_focused = any(
+                dpg.does_item_exist(tag) and dpg.is_item_focused(tag)
+                for tag in ("constant_name", "species_name", "description")
+            )
+            if (not text_field_focused) and dpg.is_key_pressed(dpg.mvKey_Delete) and self._shortcut_pressed("delete", now):
                 self.show_delete_modal()
             if ctrl and dpg.is_key_pressed(dpg.mvKey_Comma) and self._shortcut_pressed("ctrl_comma", now):
                 self.open_settings_modal()

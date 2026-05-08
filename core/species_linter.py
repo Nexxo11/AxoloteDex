@@ -37,6 +37,8 @@ _BASIC_MOVE_BY_TYPE = {
     "TYPE_FAIRY": "MOVE_FAIRY_WIND",
 }
 
+MAX_CONSTANT_NAME_LEN = 41
+
 
 def _load_valid_tokens(path: Path, prefix: str) -> set[str]:
     if not path.exists():
@@ -69,6 +71,8 @@ def lint_species_definition(
         result.errors.append(f"constant no existe para edit: {const}")
     if mode == "delete" and const not in existing_constants:
         result.errors.append(f"constant no existe para delete: {const}")
+    if len(const) > MAX_CONSTANT_NAME_LEN:
+        result.errors.append("constant_name excede límite de 41 caracteres")
     if mode == "delete":
         return result
     if not name:

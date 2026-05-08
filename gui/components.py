@@ -326,6 +326,9 @@ def _build_editor_tab(actions) -> None:
                             dpg.add_spacer(width=12)
                             dpg.add_text("0/180", tag=TAGS["description_counter"], color=(168, 163, 184, 255))
                         dpg.add_input_text(tag="description", multiline=True, height=84, callback=actions.on_description_change, width=420, always_overwrite=True)
+                        with dpg.item_handler_registry(tag="description_live_limit_handler"):
+                            dpg.add_item_edited_handler(callback=actions.on_description_edited)
+                        dpg.bind_item_handler_registry("description", "description_live_limit_handler")
                         dpg.add_text("Folder")
                         dpg.add_input_text(tag="folder_name", callback=actions.mark_dirty, width=340)
                         with dpg.group(horizontal=True):

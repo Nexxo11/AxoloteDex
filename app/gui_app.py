@@ -194,8 +194,8 @@ def main() -> None:
     dpg.show_viewport()
     dpg.set_primary_window("main_window", True)
     while dpg.is_dearpygui_running():
-        actions.pump()
         dpg.render_dearpygui_frame()
+        actions.pump()
     save_config(
         config_path,
         {

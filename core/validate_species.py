@@ -14,6 +14,8 @@ REQUIRED_ASSETS = [
     "shiny.pal",
 ]
 
+MAX_CONSTANT_NAME_LEN = 41
+
 FALLBACK_ALIASES = {
     "front.png": ["front.png", "anim_front.png"],
     "back.png": ["back.png"],
@@ -57,6 +59,8 @@ def validate_species_definition(
     constant_name = data.get("constant_name")
     if not isinstance(constant_name, str) or not constant_name.startswith("SPECIES_"):
         result.errors.append("constant_name debe iniciar con SPECIES_")
+    elif len(constant_name) > MAX_CONSTANT_NAME_LEN:
+        result.errors.append("constant_name excede límite de 41 caracteres")
 
     if mode == "delete":
         result.asset_sources = {}
