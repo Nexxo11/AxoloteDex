@@ -133,8 +133,6 @@ def resolve_preview_paths(
     warning_parts: list[str] = []
     if used_fallback:
         warning_parts.append("Usando gráficos de ejemplo (Bulbasaur)")
-    if shiny:
-        warning_parts.append("Shiny preview: se aplica shiny.pal sobre sprite base")
     if palette_variant:
         warning_parts.append(f"Variante detectada: {palette_variant}")
     warning = " | ".join(warning_parts) if warning_parts else None

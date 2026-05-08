@@ -17,6 +17,7 @@ import dearpygui.dearpygui as dpg
 from PIL import Image
 
 from core.build_check import BuildResult, parse_build_output, write_build_outputs
+from core.project_compat import detect_project_compatibility
 from gui.components import TAGS
 from gui.state import GuiState, default_editor_data, load_config, save_config
 from core.species_editor import SpeciesEditor
@@ -76,6 +77,8 @@ class GuiActions:
         self._status_validation = "idle"
         self._status_dryrun = "idle"
         self._status_build = "idle"
+        self._project_compat_level: str = "error"
+        self._project_compat_summary: str = "no compatible"
         self._primary_button_theme: int | None = None
         self._secondary_button_theme: int | None = None
         self._disabled_button_theme: int | None = None
@@ -476,9 +479,12 @@ class GuiActions:
     def _compat_text_and_color(self) -> tuple[str, tuple[int, int, int, int]]:
         if not self.state.project_loaded:
             return "no compatible", PALETTE["error"]
-        if self._status_build == "error" or self._status_validation == "error" or self._status_dryrun == "error":
+        if self._project_compat_level == "error":
             return "no compatible", PALETTE["error"]
-        if self._status_build == "running" or self._status_dryrun == "dirty":
+        if self._project_compat_level == "warning":
+            return "partial", PALETTE["warning"]
+        # Compatibility is structural/project-level; editing state should not downgrade it.
+        if self._status_build == "error":
             return "partial", PALETTE["warning"]
         return "compatible", PALETTE["success"]
 
@@ -1328,6 +1334,13 @@ class GuiActions:
         try:
             t0 = time.perf_counter()
             path = Path(dpg.get_value(TAGS["project_input"]).strip()).resolve()
+            compat = detect_project_compatibility(path)
+            self._project_compat_level = compat.level
+            self._project_compat_summary = compat.summary
+            if compat.level == "error":
+                detail = "\n".join(compat.errors[:6])
+                raise FileNotFoundError(f"Project is not compatible:\n{detail}")
+
             self.editor = SpeciesEditor(path)
             self.state.project_path = str(path)
             self.state.project_loaded = True
@@ -1374,11 +1387,16 @@ class GuiActions:
             self._invalidate_payload_cache()
             self._refresh_apply_enabled()
             self._update_header_status()
-            self._set_message("Project loaded successfully")
+            if compat.warnings:
+                self._set_message("Project loaded with compatibility warnings: " + " | ".join(compat.warnings[:3]))
+            else:
+                self._set_message("Project loaded successfully")
             self.request_preview_refresh()
             self._record_perf("load_project", (time.perf_counter() - t0) * 1000.0)
         except Exception:
             self.state.project_loaded = False
+            self._project_compat_level = "error"
+            self._project_compat_summary = "no compatible"
             self.state.editor_dirty = False
             self.state.validation_ok = False
             self.state.dry_run_valid = False

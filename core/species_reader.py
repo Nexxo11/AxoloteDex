@@ -67,11 +67,28 @@ class SpeciesReader:
         species_header = root / "include/constants/species.h"
         species_info_root = root / "src/data/pokemon/species_info.h"
         graphics_file = root / "src/data/graphics/pokemon.h"
-        egg_moves_file = root / "src/data/pokemon/egg_moves.h"
-        teachable_file = root / "src/data/pokemon/teachable_learnsets.h"
+        egg_candidates = [
+            root / "src/data/pokemon/egg_moves.h",
+            root / "src/data/pokemon/egg_move_learnsets.h",
+        ]
+        egg_moves_file = next((p for p in egg_candidates if p.exists()), egg_candidates[0])
+
+        teachable_candidates = [
+            root / "src/data/pokemon/teachable_learnsets.h",
+            root / "src/data/pokemon/tmhm_learnsets.h",
+        ]
+        teachable_file = next((p for p in teachable_candidates if p.exists()), teachable_candidates[0])
 
         family_files = sorted((root / "src/data/pokemon/species_info").glob("gen_*_families.h"))
         level_up_files = sorted((root / "src/data/pokemon/level_up_learnsets").glob("gen_*.h"))
+        if not level_up_files:
+            legacy_level_up = root / "src/data/pokemon/level_up_learnsets.h"
+            if legacy_level_up.exists():
+                level_up_files = [legacy_level_up]
+                self.warn(
+                    "Usando level_up_learnsets.h monolítico (layout alternativo)",
+                    file_path=legacy_level_up,
+                )
 
         required = [species_header, species_info_root, graphics_file, egg_moves_file]
         missing = [p for p in required if not p.exists()]
@@ -79,9 +96,12 @@ class SpeciesReader:
             missing_str = "\n".join(str(p) for p in missing)
             raise FileNotFoundError(f"Faltan archivos requeridos:\n{missing_str}")
         if not family_files:
-            raise FileNotFoundError("No se encontraron gen_*_families.h")
+            self.warn(
+                "No se encontraron gen_*_families.h; se parsea species_info.h como fuente principal",
+                file_path=species_info_root,
+            )
         if not level_up_files:
-            raise FileNotFoundError("No se encontraron level_up_learnsets/gen_*.h")
+            raise FileNotFoundError("No se encontraron learnsets level-up (gen_*.h ni level_up_learnsets.h)")
 
         return ExpansionProject(
             root=root,
