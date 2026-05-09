@@ -1,13 +1,7 @@
-python3 tools/learnset_helpers/make_teaching_types.py tools/learnset_helpers/build/all_teaching_types.json
-python3 tools/learnset_helpers/make_teachables.py tools/learnset_helpers/build
-tools/scaninc/scaninc -M build/emerald/src/pokemon.d -I include -I tools/agbcc/include src/pokemon.c
-tools/scaninc/scaninc -M build/emerald/src/move_relearner.d -I include -I tools/agbcc/include src/move_relearner.c
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/move_relearner.o src/move_relearner.c
-/usr/lib/gcc/arm-none-eabi/13.2.1/cc1 -quiet <flags> -o build/emerald/src/pokemon.o src/pokemon.c
 Memory region         Used Size  Region Size  %age Used
            EWRAM:      227692 B       256 KB     86.86%
            IWRAM:       28496 B        32 KB     86.96%
-             ROM:    26341488 B        32 MB     78.50%
+             ROM:    26341472 B        32 MB     78.50%
 cd build/emerald && arm-none-eabi-ld -Map ../../pokeemerald.map --print-memory-usage --gc-sections -T ../../ld_script_modern.ld -o ../../pokeemerald.elf <objs> <libs> | cat
 tools/gbafix/gbafix pokeemerald.elf -t"POKEMON EMER" -cBPEE -m01 -r0 --silent
 arm-none-eabi-objcopy -O binary pokeemerald.elf pokeemerald.gba

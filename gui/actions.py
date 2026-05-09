@@ -83,6 +83,7 @@ class GuiActions:
         self._status_build = "idle"
         self._project_compat_level: str = "error"
         self._project_compat_summary: str = "no compatible"
+        self._build_auto_run: bool = False
         self._primary_button_theme: int | None = None
         self._secondary_button_theme: int | None = None
         self._disabled_button_theme: int | None = None
@@ -518,6 +519,7 @@ class GuiActions:
             dpg.configure_item(TAGS["dryrun_btn"], enabled=dryrun_enabled)
         if dpg.does_item_exist(TAGS["apply_btn"]):
             dpg.configure_item(TAGS["apply_btn"], enabled=apply_enabled)
+        self._refresh_run_rom_enabled()
         self._update_action_button_progress()
         if dpg.does_item_exist(TAGS["apply_hint"]):
             if apply_enabled:
@@ -1391,6 +1393,7 @@ class GuiActions:
             self._invalidate_payload_cache()
             self._refresh_apply_enabled()
             self._update_header_status()
+            self._refresh_run_rom_enabled()
             if compat.warnings:
                 self._set_message("Project loaded with compatibility warnings: " + " | ".join(compat.warnings[:3]))
             else:
@@ -1409,6 +1412,55 @@ class GuiActions:
             dpg.configure_item(TAGS["compile_btn"], enabled=False)
             self._refresh_apply_enabled()
             self._update_header_status()
+
+    def _find_built_rom_path(self) -> Path | None:
+        if not self.state.project_path:
+            return None
+        root = Path(self.state.project_path)
+        candidates = [
+            root / "pokeemerald.gba",
+            root / "pokeemerald-test.gba",
+            root / "pokemonemerald.gba",
+        ]
+        for p in candidates:
+            if p.exists() and p.is_file():
+                return p
+        try:
+            for p in root.glob("*.gba"):
+                if p.is_file():
+                    return p
+        except Exception:
+            return None
+        return None
+
+    def _refresh_run_rom_enabled(self) -> None:
+        if dpg.does_item_exist(TAGS["run_rom_btn"]):
+            dpg.configure_item(
+                TAGS["run_rom_btn"],
+                enabled=bool(self.state.project_loaded and self._find_built_rom_path() is not None),
+            )
+
+    def on_build_auto_run_toggle(self, sender=None, app_data=None, user_data=None) -> None:
+        value = bool(dpg.get_value(TAGS["build_auto_run"])) if dpg.does_item_exist(TAGS["build_auto_run"]) else False
+        self._build_auto_run = value
+        self._persist_config({"settings_build_auto_run": value})
+
+    def open_built_rom(self, sender=None, app_data=None, user_data=None) -> None:
+        rom = self._find_built_rom_path()
+        if rom is None:
+            self._set_message("No .gba ROM found in project root")
+            self._refresh_run_rom_enabled()
+            return
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", str(rom)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(rom)])
+            else:
+                os.startfile(str(rom))  # type: ignore[attr-defined]
+            self._set_message(f"Running ROM: {rom.name}")
+        except Exception:
+            self._set_message(f"Could not open ROM automatically: {rom}")
 
     def analyze_project(self, sender=None, app_data=None, user_data=None) -> None:
         self.load_project()
@@ -3000,6 +3052,9 @@ class GuiActions:
             dpg.configure_item(TAGS["build_status"], color=PALETTE["error"])
         dpg.set_value(TAGS["build_output"], result.stdout[-20000:] if len(result.stdout) > 20000 else result.stdout)
         self._set_message(f"Build finalizado. Ver {summary_path} y {log_path}")
+        self._refresh_run_rom_enabled()
+        if result.ok and self._build_auto_run:
+            self.open_built_rom()
         self._build_thread = None
         self._build_result = None
 

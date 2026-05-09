@@ -184,6 +184,10 @@ def main() -> None:
         dpg.set_value(TAGS["settings_notify_success"], cfg["settings_notify_success"])
     if dpg.does_item_exist(TAGS["settings_notify_warning"]) and isinstance(cfg.get("settings_notify_warning"), bool):
         dpg.set_value(TAGS["settings_notify_warning"], cfg["settings_notify_warning"])
+    auto_run_build = bool(cfg.get("settings_build_auto_run", False))
+    actions._build_auto_run = auto_run_build
+    if dpg.does_item_exist(TAGS["build_auto_run"]):
+        dpg.set_value(TAGS["build_auto_run"], auto_run_build)
 
     viewport_w = int(cfg.get("window_width", 1560)) if isinstance(cfg.get("window_width"), int) else 1560
     viewport_h = int(cfg.get("window_height", 880)) if isinstance(cfg.get("window_height"), int) else 880
@@ -208,6 +212,7 @@ def main() -> None:
             "settings_backup_keep": int(dpg.get_value(TAGS["settings_backup_keep"])) if dpg.does_item_exist(TAGS["settings_backup_keep"]) else 15,
             "settings_notify_success": bool(dpg.get_value(TAGS["settings_notify_success"])) if dpg.does_item_exist(TAGS["settings_notify_success"]) else True,
             "settings_notify_warning": bool(dpg.get_value(TAGS["settings_notify_warning"])) if dpg.does_item_exist(TAGS["settings_notify_warning"]) else True,
+            "settings_build_auto_run": bool(dpg.get_value(TAGS["build_auto_run"])) if dpg.does_item_exist(TAGS["build_auto_run"]) else False,
             "settings_custom_theme": {
                 "background": list(dpg.get_value(TAGS["settings_color_background"])) if dpg.does_item_exist(TAGS["settings_color_background"]) else list(PALETTE["background"]),
                 "panel": list(dpg.get_value(TAGS["settings_color_panel"])) if dpg.does_item_exist(TAGS["settings_color_panel"]) else list(PALETTE["panel"]),

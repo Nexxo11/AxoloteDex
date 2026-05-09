@@ -141,7 +141,7 @@ def lint_species_definition(
                 continue
             level = row.get("level")
             move = str(row.get("move", "")).strip()
-            if not isinstance(level, int) or level < 1 or level > 100:
+            if not isinstance(level, int) or level < 0 or level > 100:
                 result.errors.append(f"level_up_learnset nivel invalido en indice {i}: {level}")
             if not move.startswith("MOVE_"):
                 result.errors.append(f"level_up_learnset move invalido en indice {i}: {move}")

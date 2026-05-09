@@ -1,14 +1,14 @@
 {
   "mode": "edit",
-  "constant_name": "SPECIES_WARTORTLE",
+  "constant_name": "SPECIES_CHARIZARD",
   "project_root": "/home/nexxo/Documentos/Programacion/Proyectos/pokeemerald-expansion",
   "steps": [
     {
       "target_file": "src/data/pokemon/level_up_learnsets/gen_1.h",
       "action": "update",
       "reason": "Actualizar level-up learnset",
-      "new_text": "static const struct LevelUpMove sWartortleLevelUpLearnset[] = {\n    LEVEL_UP_MOVE(1, MOVE_TACKLE),\n    LEVEL_UP_MOVE(1, MOVE_TAIL_WHIP),\n    LEVEL_UP_MOVE(1, MOVE_WATER_GUN),\n    LEVEL_UP_MOVE(1, MOVE_WITHDRAW),\n    LEVEL_UP_MOVE(9, MOVE_RAPID_SPIN),\n    LEVEL_UP_MOVE(12, MOVE_BITE),\n    LEVEL_UP_MOVE(15, MOVE_WATER_PULSE),\n    LEVEL_UP_MOVE(20, MOVE_PROTECT),\n    LEVEL_UP_MOVE(25, MOVE_RAIN_DANCE),\n    LEVEL_UP_MOVE(30, MOVE_AQUA_TAIL),\n    LEVEL_UP_MOVE(35, MOVE_SHELL_SMASH),\n    LEVEL_UP_MOVE(40, MOVE_IRON_DEFENSE),\n    LEVEL_UP_MOVE(45, MOVE_HYDRO_PUMP),\n    LEVEL_UP_MOVE(50, MOVE_WAVE_CRASH),\n    LEVEL_UP_END\n};",
-      "old_text": "static const struct LevelUpMove sWartortleLevelUpLearnset[] = {\n    LEVEL_UP_MOVE(1, MOVE_TACKLE),\n    LEVEL_UP_MOVE(1, MOVE_TAIL_WHIP),\n    LEVEL_UP_MOVE(1, MOVE_WATER_GUN),\n    LEVEL_UP_MOVE(1, MOVE_WITHDRAW),\n    LEVEL_UP_MOVE(9, MOVE_RAPID_SPIN),\n    LEVEL_UP_MOVE(12, MOVE_BITE),\n    LEVEL_UP_MOVE(15, MOVE_WATER_PULSE),\n    LEVEL_UP_MOVE(20, MOVE_PROTECT),\n    LEVEL_UP_MOVE(25, MOVE_RAIN_DANCE),\n    LEVEL_UP_MOVE(30, MOVE_AQUA_TAIL),\n    LEVEL_UP_MOVE(35, MOVE_SHELL_SMASH),\n    LEVEL_UP_MOVE(40, MOVE_IRON_DEFENSE),\n    LEVEL_UP_MOVE(45, MOVE_HYDRO_PUMP),\n    LEVEL_UP_MOVE(50, MOVE_WAVE_CRASH),\n    LEVEL_UP_END\n};",
+      "new_text": "static const struct LevelUpMove sCharizardLevelUpLearnset[] = {\n    LEVEL_UP_MOVE(0, MOVE_AIR_SLASH),\n    LEVEL_UP_MOVE(1, MOVE_SCRATCH),\n    LEVEL_UP_MOVE(1, MOVE_GROWL),\n    LEVEL_UP_MOVE(1, MOVE_EMBER),\n    LEVEL_UP_MOVE(1, MOVE_SMOKESCREEN),\n    LEVEL_UP_MOVE(1, MOVE_HEAT_WAVE),\n    LEVEL_UP_MOVE(1, MOVE_DRAGON_CLAW),\n    LEVEL_UP_MOVE(12, MOVE_DRAGON_BREATH),\n    LEVEL_UP_MOVE(19, MOVE_FIRE_FANG),\n    LEVEL_UP_MOVE(24, MOVE_SLASH),\n    LEVEL_UP_MOVE(30, MOVE_FLAMETHROWER),\n    LEVEL_UP_MOVE(39, MOVE_SCARY_FACE),\n    LEVEL_UP_MOVE(46, MOVE_FIRE_SPIN),\n    LEVEL_UP_MOVE(54, MOVE_INFERNO),\n    LEVEL_UP_MOVE(62, MOVE_FLARE_BLITZ),\n    LEVEL_UP_END\n};",
+      "old_text": "static const struct LevelUpMove sCharizardLevelUpLearnset[] = {\n    LEVEL_UP_MOVE(0, MOVE_AIR_SLASH),\n    LEVEL_UP_MOVE(1, MOVE_SCRATCH),\n    LEVEL_UP_MOVE(1, MOVE_GROWL),\n    LEVEL_UP_MOVE(1, MOVE_EMBER),\n    LEVEL_UP_MOVE(1, MOVE_SMOKESCREEN),\n    LEVEL_UP_MOVE(1, MOVE_HEAT_WAVE),\n    LEVEL_UP_MOVE(1, MOVE_DRAGON_CLAW),\n    LEVEL_UP_MOVE(12, MOVE_DRAGON_BREATH),\n    LEVEL_UP_MOVE(19, MOVE_FIRE_FANG),\n    LEVEL_UP_MOVE(24, MOVE_SLASH),\n    LEVEL_UP_MOVE(30, MOVE_FLAMETHROWER),\n    LEVEL_UP_MOVE(39, MOVE_SCARY_FACE),\n    LEVEL_UP_MOVE(46, MOVE_FIRE_SPIN),\n    LEVEL_UP_MOVE(54, MOVE_INFERNO),\n    LEVEL_UP_MOVE(62, MOVE_FLARE_BLITZ),\n    LEVEL_UP_END\n};",
       "insert_after": null,
       "insert_before": null,
       "risk_level": "high",

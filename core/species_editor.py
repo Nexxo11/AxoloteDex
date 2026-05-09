@@ -907,6 +907,14 @@ class SpeciesEditor:
         out = cls._replace_or_insert_line(out, "genderRatio", new_gender)
         out = cls._replace_or_insert_line(out, "cryId", str(data.get("cry_id", "CRY_NONE") or "CRY_NONE"))
 
+        stats = data.get("base_stats", {}) if isinstance(data.get("base_stats", {}), dict) else {}
+        out = cls._replace_or_insert_line(out, "baseHP", str(int(stats.get("hp", 1))))
+        out = cls._replace_or_insert_line(out, "baseAttack", str(int(stats.get("attack", 1))))
+        out = cls._replace_or_insert_line(out, "baseDefense", str(int(stats.get("defense", 1))))
+        out = cls._replace_or_insert_line(out, "baseSpeed", str(int(stats.get("speed", 1))))
+        out = cls._replace_or_insert_line(out, "baseSpAttack", str(int(stats.get("sp_attack", 1))))
+        out = cls._replace_or_insert_line(out, "baseSpDefense", str(int(stats.get("sp_defense", 1))))
+
         ev = data.get("ev_yields", {}) if isinstance(data.get("ev_yields", {}), dict) else {}
         out = cls._replace_or_insert_line(out, "evYield_HP", str(int(ev.get("hp", 0))), allow_insert=False)
         out = cls._replace_or_insert_line(out, "evYield_Attack", str(int(ev.get("attack", 0))), allow_insert=False)

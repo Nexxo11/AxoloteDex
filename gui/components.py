@@ -37,6 +37,8 @@ TAGS = {
     "delete_modal": "delete_modal",
     "delete_btn": "delete_btn",
     "build_progress": "build_progress",
+    "run_rom_btn": "run_rom_btn",
+    "build_auto_run": "build_auto_run",
     "preview_front_img": "preview_front_img",
     "preview_back_img": "preview_back_img",
     "preview_icon_img": "preview_icon_img",
@@ -559,6 +561,8 @@ def _build_plan_tab(actions) -> None:
 def _build_build_tab(actions) -> None:
     with dpg.group(horizontal=True):
         dpg.add_button(label="Build", tag=TAGS["compile_btn"], enabled=False, callback=actions.show_build_modal)
+        dpg.add_button(label="Run ROM", tag=TAGS["run_rom_btn"], enabled=False, callback=actions.open_built_rom)
+        dpg.add_checkbox(label="Auto-run on success", tag=TAGS["build_auto_run"], default_value=False, callback=actions.on_build_auto_run_toggle)
         dpg.add_text("Build: idle", tag=TAGS["build_status"])
     dpg.add_progress_bar(default_value=0.0, tag=TAGS["build_progress"], width=520, overlay="Idle")
     dpg.add_input_text(tag=TAGS["build_output"], multiline=True, readonly=True, width=-1, height=560)
