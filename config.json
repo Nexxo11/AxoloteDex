@@ -1,13 +1,14 @@
 {
   "last_project_path": "/home/nexxo/Documentos/Programacion/Proyectos/pokeemerald-expansion",
-  "last_species_constant": "SPECIES_CHARIZARD",
+  "last_species_constant": "SPECIES_IVYSAUR",
   "window_width": 1908,
-  "window_height": 994,
+  "window_height": 1028,
   "settings_theme": "Custom",
   "settings_backup_auto": true,
   "settings_backup_keep": 15,
   "settings_notify_success": true,
   "settings_notify_warning": true,
+  "settings_build_auto_run": false,
   "settings_custom_theme": {
     "background": [
       0,
@@ -57,6 +58,5 @@
       183,
       255
     ]
-  },
-  "settings_build_auto_run": false
+  }
 }

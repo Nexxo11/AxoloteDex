@@ -12,11 +12,13 @@ import sys
 import threading
 import time
 import traceback
+from difflib import SequenceMatcher
 
 import dearpygui.dearpygui as dpg
 from PIL import Image
 
 from core.build_check import BuildResult, parse_build_output, write_build_outputs
+from core.mechanics import detect_project_mechanics, detect_species_mechanics
 from core.project_compat import detect_project_compatibility
 from gui.components import TAGS
 from gui.state import GuiState, default_editor_data, load_config, save_config
@@ -31,6 +33,7 @@ class GuiActions:
     MAX_CONSTANT_NAME_LEN = 41
     MAX_SPECIES_NAME_LEN = 12
     MAX_DESCRIPTION_LEN = 180
+    PICKER_MAX_ROWS = 220
 
     def __init__(self, state: GuiState, config_path: Path) -> None:
         self.state = state
@@ -84,6 +87,14 @@ class GuiActions:
         self._project_compat_level: str = "error"
         self._project_compat_summary: str = "no compatible"
         self._build_auto_run: bool = False
+        self._evo_methods: list[str] = []
+        self._mechanics_row_map: list[dict[str, str | int | bool]] = []
+        self._mechanics_row_tags: list[str] = []
+        self._mechanics_last_click_index: int = -1
+        self._mechanics_last_click_time: float = 0.0
+        self._mechanics_cfg_theme: int | None = None
+        self._mechanics_detected_theme: int | None = None
+        self._picker_species_row_map: dict[str, str] = {}
         self._primary_button_theme: int | None = None
         self._secondary_button_theme: int | None = None
         self._disabled_button_theme: int | None = None
@@ -104,6 +115,7 @@ class GuiActions:
         self._radar_drag_start_mouse: tuple[float, float] | None = None
         self._radar_drag_snapshot: dict | None = None
         self._type_modal_mouse_was_down: bool = False
+        self._picker_mouse_was_down: bool = False
 
     def set_button_themes(self, primary_theme: int, secondary_theme: int, disabled_theme: int | None = None) -> None:
         self._primary_button_theme = primary_theme
@@ -529,6 +541,246 @@ class GuiActions:
                 dpg.set_value(TAGS["apply_hint"], "Flow: Validate -> Generate dry-run -> Apply changes")
                 dpg.configure_item(TAGS["apply_hint"], color=PALETTE["warning"])
 
+    def _refresh_mechanics_info(self) -> None:
+        caps = self.state.mechanics_capabilities or {}
+        ev = self.state.mechanics_evidence or {}
+        sflags = self.state.selected_species_mechanics or {}
+        sev = self.state.selected_species_mechanics_evidence or []
+
+        lines: list[str] = []
+        lines.append("Project capabilities")
+        for key, label in (("mega", "Mega"), ("gigantamax", "Gigantamax"), ("z_move", "Z-Move"), ("tera", "Terastal")):
+            on = bool(caps.get(key))
+            lines.append(f"- {label}: {'ON' if on else 'OFF'}")
+            evidence = ev.get(key) or []
+            if evidence:
+                lines.append(f"  evidence: {evidence[0]}")
+
+        lines.append("")
+        lines.append("Selected species flags")
+        lines.append(f"- Is Mega form: {'YES' if sflags.get('is_mega_form') else 'NO'}")
+        lines.append(f"- Is Gmax form: {'YES' if sflags.get('is_gmax_form') else 'NO'}")
+        lines.append(f"- Uses Mega evo: {'YES' if sflags.get('uses_mega_evo') else 'NO'}")
+        lines.append(f"- Uses Gmax evo: {'YES' if sflags.get('uses_gmax_evo') else 'NO'}")
+        lines.append(f"- Has Mega forms in project: {'YES' if sflags.get('has_mega_forms') else 'NO'}")
+        lines.append(f"- Has Gmax forms in project: {'YES' if sflags.get('has_gmax_forms') else 'NO'}")
+        if sev:
+            lines.append("- Evidence:")
+            for item in sev[:4]:
+                lines.append(f"  - {item}")
+        print("[mechanics]\n" + "\n".join(lines))
+
+    def _refresh_mechanics_filters(self) -> None:
+        self._picker_species_row_map.clear()
+        all_items = ["ITEM_NONE"] + list(self.state.item_options or [])
+        all_targets = sorted(
+            {
+                str(item.get("constant_name") or "").strip()
+                for item in self.state.species_list
+                if str(item.get("constant_name") or "").strip()
+            }
+        )
+
+        item_query = str(dpg.get_value("mech_item_search") or "").strip().upper() if dpg.does_item_exist("mech_item_search") else ""
+        target_query = str(dpg.get_value("mech_target_search") or "").strip().upper() if dpg.does_item_exist("mech_target_search") else ""
+
+        item_opts = [x for x in all_items if not item_query or item_query in x.upper()]
+        target_opts = [x for x in all_targets if not target_query or target_query in x.upper()]
+        if not item_opts:
+            item_opts = ["ITEM_NONE"]
+        if not target_opts:
+            target_opts = all_targets[:]
+
+        if dpg.does_item_exist("mech_item"):
+            current_item = str(dpg.get_value("mech_item") or "ITEM_NONE")
+            dpg.configure_item("mech_item", items=item_opts)
+            dpg.set_value("mech_item", current_item if current_item in item_opts else item_opts[0])
+        if dpg.does_item_exist(TAGS.get("mech_item_list", "")):
+            dpg.configure_item(TAGS["mech_item_list"], items=item_opts[: self.PICKER_MAX_ROWS])
+        if dpg.does_item_exist("mech_target"):
+            current_target = str(dpg.get_value("mech_target") or "")
+            dpg.configure_item("mech_target", items=target_opts)
+            if target_opts:
+                dpg.set_value("mech_target", current_target if current_target in target_opts else target_opts[0])
+        if dpg.does_item_exist(TAGS.get("mech_target_list", "")):
+            dpg.configure_item(TAGS["mech_target_list"], items=target_opts[: self.PICKER_MAX_ROWS])
+        self._refresh_mechanics_picker_labels()
+
+    def _refresh_mechanics_picker_labels(self) -> None:
+        if dpg.does_item_exist("mech_item_picker_btn") and dpg.does_item_exist("mech_item"):
+            item = str(dpg.get_value("mech_item") or "ITEM_NONE")
+            dpg.configure_item("mech_item_picker_btn", label=item)
+        if dpg.does_item_exist("mech_target_picker_btn") and dpg.does_item_exist("mech_target"):
+            target = str(dpg.get_value("mech_target") or "").strip() or "Select target species"
+            dpg.configure_item("mech_target_picker_btn", label=target)
+
+    def _close_extra_pickers(self) -> None:
+        for tag in ("cry_modal", "move_modal", "tmhm_modal", "tutor_modal"):
+            t = TAGS.get(tag, "")
+            if t and dpg.does_item_exist(t):
+                dpg.configure_item(t, show=False)
+
+    def close_mechanics_pickers(self, sender=None, app_data=None, user_data=None) -> None:
+        if dpg.does_item_exist(TAGS["mech_item_modal"]):
+            dpg.configure_item(TAGS["mech_item_modal"], show=False)
+        if dpg.does_item_exist(TAGS["mech_target_modal"]):
+            dpg.configure_item(TAGS["mech_target_modal"], show=False)
+        if dpg.does_item_exist(TAGS.get("evo_item_modal", "")):
+            dpg.configure_item(TAGS["evo_item_modal"], show=False)
+        if dpg.does_item_exist(TAGS.get("evo_target_modal", "")):
+            dpg.configure_item(TAGS["evo_target_modal"], show=False)
+        self._close_extra_pickers()
+
+    def _position_picker_window(self, modal_tag: str, anchor_tag: str) -> None:
+        if not dpg.does_item_exist(modal_tag):
+            return
+        rect = self._safe_item_rect_min_size(anchor_tag)
+        if rect is not None:
+            mn, sz = rect
+            dpg.configure_item(modal_tag, pos=(int(mn[0]), int(mn[1] + sz[1] + 6)), show=True)
+        else:
+            mx, my = dpg.get_mouse_pos(local=False)
+            dpg.configure_item(modal_tag, pos=(int(mx), int(my)), show=True)
+
+    def open_mechanics_item_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("mech_item_search"):
+            dpg.set_value("mech_item_search", "")
+        self._refresh_mechanics_filters()
+        rect = self._safe_item_rect_min_size("mech_item_picker_btn")
+        if dpg.does_item_exist(TAGS["mech_item_modal"]):
+            if rect is not None:
+                mn, sz = rect
+                dpg.configure_item(TAGS["mech_item_modal"], pos=(int(mn[0]), int(mn[1] + sz[1] + 6)), show=True)
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                dpg.configure_item(TAGS["mech_item_modal"], pos=(int(mx), int(my)), show=True)
+
+    def open_mechanics_target_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("mech_target_search"):
+            dpg.set_value("mech_target_search", "")
+        self._refresh_mechanics_filters()
+        rect = self._safe_item_rect_min_size("mech_target_picker_btn")
+        if dpg.does_item_exist(TAGS["mech_target_modal"]):
+            if rect is not None:
+                mn, sz = rect
+                dpg.configure_item(TAGS["mech_target_modal"], pos=(int(mn[0]), int(mn[1] + sz[1] + 6)), show=True)
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                dpg.configure_item(TAGS["mech_target_modal"], pos=(int(mx), int(my)), show=True)
+
+    def select_mechanics_item_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        picked = str(app_data or user_data or "").strip()
+        if not picked:
+            return
+        if dpg.does_item_exist("mech_item"):
+            dpg.set_value("mech_item", picked)
+        self._refresh_mechanics_picker_labels()
+        self.close_mechanics_pickers()
+
+    def select_mechanics_target_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        picked = str(app_data or user_data or "").strip()
+        if not picked:
+            return
+        if dpg.does_item_exist("mech_target"):
+            dpg.set_value("mech_target", picked)
+        self._refresh_mechanics_picker_labels()
+        self.close_mechanics_pickers()
+
+    def on_mechanics_item_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_mechanics_filters()
+
+    def on_mechanics_target_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_mechanics_filters()
+
+    def _refresh_move_like_picker(self, value_tag: str, list_tag: str, search_tag: str, source: list[str]) -> None:
+        q = str(dpg.get_value(search_tag) or "").strip().upper() if dpg.does_item_exist(search_tag) else ""
+        opts = [x for x in source if not q or q in x.upper()]
+        if dpg.does_item_exist(value_tag):
+            cur = str(dpg.get_value(value_tag) or (source[0] if source else ""))
+            show_items = opts[: self.PICKER_MAX_ROWS] if opts else source[: self.PICKER_MAX_ROWS]
+            dpg.configure_item(value_tag, items=show_items)
+            if show_items:
+                dpg.set_value(value_tag, cur if cur in show_items else show_items[0])
+        if dpg.does_item_exist(list_tag):
+            dpg.configure_item(list_tag, items=opts[: self.PICKER_MAX_ROWS])
+
+    def select_generic_picker_value(self, sender=None, app_data=None, user_data=None) -> None:
+        value_tag = str(user_data or "")
+        token = str(app_data or "")
+        if value_tag and dpg.does_item_exist(value_tag):
+            dpg.set_value(value_tag, token)
+        self._refresh_aux_picker_labels()
+        self.close_mechanics_pickers()
+        self.mark_dirty()
+
+    def select_cry_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        self.select_generic_picker_value(sender=sender, app_data=app_data, user_data="cry_id")
+
+    def select_move_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        self.select_generic_picker_value(sender=sender, app_data=app_data, user_data="move_name")
+
+    def select_tmhm_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        self.select_generic_picker_value(sender=sender, app_data=app_data, user_data="tmhm_move")
+
+    def select_tutor_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        self.select_generic_picker_value(sender=sender, app_data=app_data, user_data="tutor_move")
+
+    def _refresh_aux_picker_labels(self) -> None:
+        mapping = [
+            ("cry_picker_btn", "cry_id", "CRY_NONE"),
+            ("move_picker_btn", "move_name", "MOVE_TACKLE"),
+            ("tmhm_picker_btn", "tmhm_move", "MOVE_TACKLE"),
+            ("tutor_picker_btn", "tutor_move", "MOVE_TACKLE"),
+            ("evo_item_picker_btn", "evo_item_param", "ITEM_NONE"),
+            ("evo_target_picker_btn", "evo_target", "Select target species"),
+        ]
+        for btn, value_tag, fallback in mapping:
+            if dpg.does_item_exist(btn) and dpg.does_item_exist(value_tag):
+                v = str(dpg.get_value(value_tag) or fallback)
+                dpg.configure_item(btn, label=v)
+
+    def on_cry_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_move_like_picker("cry_id", TAGS["cry_list"], "cry_search", self.state.cry_options or ["CRY_NONE"])
+
+    def on_move_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_move_like_picker("move_name", TAGS["move_list"], "move_search", self.state.move_options or ["MOVE_TACKLE"])
+
+    def on_tmhm_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_move_like_picker("tmhm_move", TAGS["tmhm_list"], "tmhm_search", self.state.tmhm_options or ["MOVE_TACKLE"])
+
+    def on_tutor_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_move_like_picker("tutor_move", TAGS["tutor_list"], "tutor_search", self.state.tutor_options or ["MOVE_TACKLE"])
+
+    def open_cry_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("cry_search"):
+            dpg.set_value("cry_search", "")
+        self.on_cry_search_change()
+        self._position_picker_window(TAGS["cry_modal"], "cry_picker_btn")
+
+    def open_move_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("move_search"):
+            dpg.set_value("move_search", "")
+        self.on_move_search_change()
+        self._position_picker_window(TAGS["move_modal"], "move_picker_btn")
+
+    def open_tmhm_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("tmhm_search"):
+            dpg.set_value("tmhm_search", "")
+        self.on_tmhm_search_change()
+        self._position_picker_window(TAGS["tmhm_modal"], "tmhm_picker_btn")
+
+    def open_tutor_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist("tutor_search"):
+            dpg.set_value("tutor_search", "")
+        self.on_tutor_search_change()
+        self._position_picker_window(TAGS["tutor_modal"], "tutor_picker_btn")
+
     def _load_options_from_project(self) -> None:
         if not self.state.project_loaded:
             return
@@ -601,6 +853,7 @@ class GuiActions:
         self.state.tutor_options = sorted(set(tutor_moves)) if tutor_moves else ["MOVE_TACKLE"]
         self.state.cry_options = cries if cries else ["CRY_NONE"]
         self.state.condition_options = condition_tokens if condition_tokens else ["IF_KNOWS_MOVE"]
+        self._evo_methods = list(evo_methods) if evo_methods else ["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"]
 
         dpg.configure_item("type1", items=self.state.type_options)
         dpg.configure_item("type2", items=[""] + self.state.type_options)
@@ -614,20 +867,40 @@ class GuiActions:
         dpg.configure_item("tutor_move", items=self.state.tutor_options)
         dpg.configure_item("cry_id", items=self.state.cry_options)
         if dpg.does_item_exist("evo_method"):
-            items = evo_methods if evo_methods else ["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"]
+            items = self._evo_methods
             dpg.configure_item("evo_method", items=items)
         if dpg.does_item_exist("evo_condition_type"):
             dpg.configure_item("evo_condition_type", items=self.state.condition_options)
         if dpg.does_item_exist("evo_condition_value"):
             dpg.configure_item("evo_condition_value", items=self.state.move_options)
         if dpg.does_item_exist("evo_method"):
-            evo_items = evo_methods if evo_methods else ["EVO_LEVEL", "EVO_ITEM", "EVO_TRADE", "EVO_FRIENDSHIP"]
+            evo_items = self._evo_methods
             dpg.configure_item("evo_method", items=evo_items)
             current_method = str(dpg.get_value("evo_method") or "")
             if current_method not in evo_items:
                 dpg.set_value("evo_method", evo_items[0])
+        if dpg.does_item_exist("mech_item"):
+            mech_items = ["ITEM_NONE"] + list(self.state.item_options)
+            dpg.configure_item("mech_item", items=mech_items)
+            if str(dpg.get_value("mech_item") or "ITEM_NONE") not in mech_items:
+                dpg.set_value("mech_item", "ITEM_NONE")
+        evo_targets = sorted(
+            {
+                str(item.get("constant_name") or "").strip()
+                for item in self.state.species_list
+                if str(item.get("constant_name") or "").strip()
+            }
+        )
+        if dpg.does_item_exist("mech_target"):
+            dpg.configure_item("mech_target", items=evo_targets)
+        self._refresh_mechanics_filters()
+        self._refresh_evo_target_picker()
+        self._refresh_evo_item_picker()
+        self._ensure_evo_target_selected()
         if self.state.item_options:
             dpg.set_value("evo_item_param", self.state.item_options[0])
+            if dpg.does_item_exist("evo_item_picker_btn"):
+                dpg.configure_item("evo_item_picker_btn", label=self.state.item_options[0])
         if self.state.move_options:
             dpg.set_value("move_name", self.state.move_options[0])
         if self.state.tmhm_options:
@@ -637,6 +910,7 @@ class GuiActions:
         if self.state.cry_options:
             current_cry = str(dpg.get_value("cry_id") or "CRY_NONE") if dpg.does_item_exist("cry_id") else "CRY_NONE"
             dpg.set_value("cry_id", current_cry if current_cry in self.state.cry_options else self.state.cry_options[0])
+        self._refresh_aux_picker_labels()
         self._rebuild_type_icon_pickers()
         self._refresh_type_icons()
 
@@ -876,6 +1150,194 @@ class GuiActions:
                     self.close_type_modals()
         self._type_modal_mouse_was_down = left_down
 
+    def _refresh_evo_target_picker(self) -> None:
+        self._picker_species_row_map.clear()
+        all_targets = sorted(
+            {
+                str(item.get("constant_name") or "").strip()
+                for item in self.state.species_list
+                if str(item.get("constant_name") or "").strip()
+            }
+        )
+        q = str(dpg.get_value("evo_target_search") or "").strip().upper() if dpg.does_item_exist("evo_target_search") else ""
+        opts = [x for x in all_targets if not q or q in x.upper()]
+        if dpg.does_item_exist("evo_target"):
+            cur = str(dpg.get_value("evo_target") or "")
+            selected_pool = (opts if opts else all_targets)
+            visible = selected_pool[: self.PICKER_MAX_ROWS]
+            dpg.configure_item("evo_target", items=visible)
+            if visible:
+                dpg.set_value("evo_target", cur if cur in visible else visible[0])
+            else:
+                dpg.set_value("evo_target", "")
+        if dpg.does_item_exist(TAGS.get("evo_target_list", "")):
+            dpg.configure_item(TAGS["evo_target_list"], items=(opts if opts else all_targets)[: self.PICKER_MAX_ROWS])
+        if dpg.does_item_exist("evo_target_picker_btn") and dpg.does_item_exist("evo_target"):
+            lbl = str(dpg.get_value("evo_target") or "").strip() or "Select target species"
+            dpg.configure_item("evo_target_picker_btn", label=lbl)
+
+    def on_evo_target_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_evo_target_picker()
+
+    def _ensure_evo_target_selected(self) -> None:
+        if not dpg.does_item_exist("evo_target"):
+            return
+        cfg = dpg.get_item_configuration("evo_target")
+        items = list(cfg.get("items") or [])
+        if not items:
+            dpg.set_value("evo_target", "")
+            return
+        cur = str(dpg.get_value("evo_target") or "")
+        if cur not in items:
+            dpg.set_value("evo_target", items[0])
+
+    def open_evo_target_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist(TAGS["evo_target_modal"]):
+            if dpg.does_item_exist("evo_target_search"):
+                dpg.set_value("evo_target_search", "")
+            self._refresh_evo_target_picker()
+            rect = self._safe_item_rect_min_size("evo_target_picker_btn")
+            if rect is not None:
+                mn, sz = rect
+                dpg.configure_item(TAGS["evo_target_modal"], pos=(int(mn[0]), int(mn[1] + sz[1] + 6)), show=True)
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                dpg.configure_item(TAGS["evo_target_modal"], pos=(int(mx), int(my)), show=True)
+
+    def select_evo_target_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        picked = str(app_data or user_data or "").strip()
+        if not picked:
+            return
+        if dpg.does_item_exist("evo_target"):
+            dpg.set_value("evo_target", picked)
+        self._refresh_evo_target_picker()
+        if dpg.does_item_exist(TAGS["evo_target_modal"]):
+            dpg.configure_item(TAGS["evo_target_modal"], show=False)
+        self.mark_dirty()
+
+    def _refresh_evo_item_picker(self) -> None:
+        all_items = ["ITEM_NONE"] + list(self.state.item_options or [])
+        q = str(dpg.get_value("evo_item_search") or "").strip().upper() if dpg.does_item_exist("evo_item_search") else ""
+        opts = [x for x in all_items if not q or q in x.upper()]
+        if dpg.does_item_exist("evo_item_param"):
+            cur = str(dpg.get_value("evo_item_param") or "ITEM_NONE")
+            dpg.configure_item("evo_item_param", items=opts[: self.PICKER_MAX_ROWS])
+            dpg.set_value("evo_item_param", cur if cur in opts else (opts[0] if opts else "ITEM_NONE"))
+        if dpg.does_item_exist("evo_item_picker_btn"):
+            dpg.configure_item("evo_item_picker_btn", label=str(dpg.get_value("evo_item_param") or "ITEM_NONE"))
+        if dpg.does_item_exist(TAGS.get("evo_item_list", "")):
+            dpg.configure_item(TAGS["evo_item_list"], items=opts[: self.PICKER_MAX_ROWS])
+
+    def on_evo_item_search_change(self, sender=None, app_data=None, user_data=None) -> None:
+        self._refresh_evo_item_picker()
+
+    def open_evo_item_picker(self, sender=None, app_data=None, user_data=None) -> None:
+        self.close_mechanics_pickers()
+        if dpg.does_item_exist(TAGS["evo_target_modal"]):
+            dpg.configure_item(TAGS["evo_target_modal"], show=False)
+        if dpg.does_item_exist("evo_item_search"):
+            dpg.set_value("evo_item_search", "")
+        self._refresh_evo_item_picker()
+        rect = self._safe_item_rect_min_size("evo_item_picker_btn")
+        if dpg.does_item_exist(TAGS["evo_item_modal"]):
+            if rect is not None:
+                mn, sz = rect
+                dpg.configure_item(TAGS["evo_item_modal"], pos=(int(mn[0]), int(mn[1] + sz[1] + 6)), show=True)
+            else:
+                mx, my = dpg.get_mouse_pos(local=False)
+                dpg.configure_item(TAGS["evo_item_modal"], pos=(int(mx), int(my)), show=True)
+
+    def select_evo_item_from_list(self, sender=None, app_data=None, user_data=None) -> None:
+        picked = str(app_data or user_data or "").strip()
+        if not picked:
+            return
+        if dpg.does_item_exist("evo_item_param"):
+            dpg.set_value("evo_item_param", picked)
+        self._refresh_evo_item_picker()
+        if dpg.does_item_exist(TAGS["evo_item_modal"]):
+            dpg.configure_item(TAGS["evo_item_modal"], show=False)
+        self.mark_dirty()
+
+    def _attach_species_tooltip(self, row_tag: str, species_constant: str) -> None:
+        target_constant = self._extract_species_constant(species_constant)
+        if row_tag and target_constant:
+            self._picker_species_row_map[row_tag] = target_constant
+
+    def _attach_item_tooltip(self, row_tag: str, item_token: str) -> None:
+        with dpg.tooltip(row_tag):
+            dpg.add_text(str(item_token or ""))
+
+    def _handle_picker_auto_close(self) -> None:
+        left_down = bool(dpg.is_mouse_button_down(dpg.mvMouseButton_Left))
+        if left_down and not self._picker_mouse_was_down:
+            modal_tags = [
+                TAGS.get("mech_item_modal", ""), TAGS.get("mech_target_modal", ""), TAGS.get("evo_target_modal", ""), TAGS.get("evo_item_modal", ""),
+                TAGS.get("cry_modal", ""), TAGS.get("move_modal", ""), TAGS.get("tmhm_modal", ""), TAGS.get("tutor_modal", ""),
+            ]
+            open_any = False
+            for t in modal_tags:
+                if t and dpg.does_item_exist(t):
+                    try:
+                        if bool(dpg.get_item_configuration(t).get("show", False)):
+                            open_any = True
+                            break
+                    except Exception:
+                        pass
+            if open_any:
+                hover_tags = [
+                    TAGS.get("mech_item_modal", ""), TAGS.get("mech_target_modal", ""), TAGS.get("evo_target_modal", ""),
+                    TAGS.get("mech_item_list", ""), TAGS.get("mech_target_list", ""), TAGS.get("evo_target_list", ""), TAGS.get("evo_item_list", ""),
+                    TAGS.get("cry_list", ""), TAGS.get("move_list", ""), TAGS.get("tmhm_list", ""), TAGS.get("tutor_list", ""),
+                    "mech_item_search", "mech_target_search", "evo_target_search", "evo_item_search", "cry_search", "move_search", "tmhm_search", "tutor_search",
+                    "mech_item_picker_btn", "mech_target_picker_btn", "evo_target_picker_btn", "evo_item_picker_btn", "cry_picker_btn", "move_picker_btn", "tmhm_picker_btn", "tutor_picker_btn",
+                ]
+                hovered = any(t and dpg.does_item_exist(t) and dpg.is_item_hovered(t) for t in hover_tags)
+                if not hovered:
+                    self.close_mechanics_pickers()
+                    if dpg.does_item_exist(TAGS["evo_target_modal"]):
+                        dpg.configure_item(TAGS["evo_target_modal"], show=False)
+                    self._hide_picker_hover_preview()
+        self._picker_mouse_was_down = left_down
+
+    def _hide_picker_hover_preview(self) -> None:
+        tag = TAGS.get("picker_hover_preview")
+        if tag and dpg.does_item_exist(tag):
+            dpg.configure_item(tag, show=False)
+
+    def _update_picker_hover_preview(self) -> None:
+        if not self._picker_species_row_map:
+            self._hide_picker_hover_preview()
+            return
+        hovered_row = ""
+        for row_tag in list(self._picker_species_row_map.keys()):
+            if dpg.does_item_exist(row_tag) and dpg.is_item_hovered(row_tag):
+                hovered_row = row_tag
+                break
+        if not hovered_row:
+            self._hide_picker_hover_preview()
+            return
+        target_constant = self._picker_species_row_map.get(hovered_row, "")
+        if not target_constant or not self.editor or not self.state.project_loaded:
+            self._hide_picker_hover_preview()
+            return
+        species = self.editor.species_by_constant.get(target_constant)
+        if not species or not species.folder_name:
+            self._hide_picker_hover_preview()
+            return
+        try:
+            tex_tag, w, h = self._evo_tooltip_texture(str(species.folder_name), 0)
+        except Exception:
+            self._hide_picker_hover_preview()
+            return
+        win = TAGS.get("picker_hover_preview")
+        img = TAGS.get("picker_hover_img")
+        if not win or not img or not dpg.does_item_exist(win) or not dpg.does_item_exist(img):
+            return
+        mx, my = dpg.get_mouse_pos(local=False)
+        dpg.configure_item(win, pos=(int(mx + 18), int(my + 14)), show=True)
+        dpg.configure_item(img, texture_tag=tex_tag, width=w, height=h)
+
     def on_mouse_wheel(self, sender=None, app_data=None, user_data=None) -> None:
         if not self.state.project_loaded:
             return
@@ -901,8 +1363,10 @@ class GuiActions:
             self._radar_initialized = True
             self._refresh_stats_radar()
         self._update_evolution_hover_preview()
+        self._update_picker_hover_preview()
         self._handle_stats_radar_drag()
         self._handle_type_modal_auto_close()
+        self._handle_picker_auto_close()
         now = time.monotonic()
 
         hover_idx = -1
@@ -1347,6 +1811,12 @@ class GuiActions:
                 detail = "\n".join(compat.errors[:6])
                 raise FileNotFoundError(f"Project is not compatible:\n{detail}")
 
+            mechanics = detect_project_mechanics(path)
+            self.state.mechanics_capabilities = dict(mechanics.capabilities)
+            self.state.mechanics_evidence = dict(mechanics.evidence)
+            self.state.selected_species_mechanics = {}
+            self.state.selected_species_mechanics_evidence = []
+
             self.editor = SpeciesEditor(path)
             self.state.project_path = str(path)
             self.state.project_loaded = True
@@ -1394,6 +1864,7 @@ class GuiActions:
             self._refresh_apply_enabled()
             self._update_header_status()
             self._refresh_run_rom_enabled()
+            self._refresh_mechanics_info()
             if compat.warnings:
                 self._set_message("Project loaded with compatibility warnings: " + " | ".join(compat.warnings[:3]))
             else:
@@ -1404,6 +1875,10 @@ class GuiActions:
             self.state.project_loaded = False
             self._project_compat_level = "error"
             self._project_compat_summary = "no compatible"
+            self.state.mechanics_capabilities = {}
+            self.state.mechanics_evidence = {}
+            self.state.selected_species_mechanics = {}
+            self.state.selected_species_mechanics_evidence = []
             self.state.editor_dirty = False
             self.state.validation_ok = False
             self.state.dry_run_valid = False
@@ -1412,6 +1887,7 @@ class GuiActions:
             dpg.configure_item(TAGS["compile_btn"], enabled=False)
             self._refresh_apply_enabled()
             self._update_header_status()
+            self._refresh_mechanics_info()
 
     def _find_built_rom_path(self) -> Path | None:
         if not self.state.project_path:
@@ -1514,6 +1990,327 @@ class GuiActions:
         return rows
 
     @staticmethod
+    def _method_matches_kind(method: str, kind: str) -> bool:
+        token = str(method or "").upper()
+        if kind == "mega":
+            return "MEGA" in token
+        if kind == "gmax":
+            return ("GMAX" in token) or ("GIGANTAMAX" in token) or ("DYNAMAX" in token)
+        return False
+
+    def _pick_method_for_kind(self, kind: str) -> str:
+        methods = self._evo_methods or ["EVO_LEVEL"]
+        for m in methods:
+            if self._method_matches_kind(m, kind):
+                return m
+        return methods[0]
+
+    def _find_evolution_index_by_kind(self, kind: str) -> int:
+        for idx, row in enumerate(self.state.evolution_rows):
+            if self._method_matches_kind(str(row.get("method") or ""), kind):
+                return idx
+        return -1
+
+    def _find_mechanics_evo_indices(self) -> list[int]:
+        out: list[int] = []
+        for idx, row in enumerate(self.state.evolution_rows):
+            m = str(row.get("method") or "")
+            if self._method_matches_kind(m, "mega") or self._method_matches_kind(m, "gmax"):
+                out.append(idx)
+        return out
+
+    def _suggest_targets_for_kind(self, kind: str) -> list[str]:
+        base = str(self.state.selected_species_constant or "").strip().upper()
+        if not base:
+            return []
+        constants = sorted(
+            {
+                str(item.get("constant_name") or "").strip().upper()
+                for item in self.state.species_list
+                if str(item.get("constant_name") or "").strip()
+            }
+        )
+        if kind == "mega":
+            prefix = f"{base}_MEGA"
+            return [c for c in constants if c.startswith(prefix)]
+        if kind == "gmax":
+            exact = [f"{base}_GMAX", f"{base}_GIGANTAMAX"]
+            out: list[str] = []
+            for token in exact:
+                if token in constants:
+                    out.append(token)
+            candidates = [c for c in constants if c.startswith(f"{base}_") and ("GMAX" in c or "GIGANTAMAX" in c)]
+            for c in candidates:
+                if c not in out:
+                    out.append(c)
+            return out
+        return []
+
+    def _suggest_target_for_kind(self, kind: str) -> str:
+        items = self._suggest_targets_for_kind(kind)
+        return items[0] if items else ""
+
+    def _suggest_item_for_target(self, target: str) -> str:
+        token = self._extract_species_constant(target)
+        if not token:
+            return "ITEM_NONE"
+        names = ["ITEM_NONE"] + list(self.state.item_options or [])
+        if token.endswith("_MEGA_X"):
+            base = token.replace("SPECIES_", "").removesuffix("_MEGA_X")
+            probe = f"ITEM_{base}ITE_X"
+            if probe in names:
+                return probe
+        if token.endswith("_MEGA_Y"):
+            base = token.replace("SPECIES_", "").removesuffix("_MEGA_Y")
+            probe = f"ITEM_{base}ITE_Y"
+            if probe in names:
+                return probe
+        if token.endswith("_MEGA"):
+            base = token.replace("SPECIES_", "").removesuffix("_MEGA")
+            probe = f"ITEM_{base}ITE"
+            if probe in names:
+                return probe
+            probe = f"ITEM_{base}NITE"
+            if probe in names:
+                return probe
+            probe = f"ITEM_{base}INITE"
+            if probe in names:
+                return probe
+        base = token.replace("SPECIES_", "").split("_MEGA", 1)[0]
+        base_norm = re.sub(r"[^A-Z0-9]", "", base)
+
+        def _item_stem(item_name: str) -> str:
+            text = item_name.replace("ITEM_", "")
+            text = re.sub(r"_(X|Y)$", "", text)
+            text = re.sub(r"(INITE|NITE|ITE)$", "", text)
+            return re.sub(r"[^A-Z0-9]", "", text)
+
+        scored: list[tuple[float, str]] = []
+        for item in names:
+            if item == "ITEM_NONE":
+                continue
+            if not ("ITE" in item or "NITE" in item or "INITE" in item):
+                continue
+            stem = _item_stem(item)
+            if not stem:
+                continue
+            score = SequenceMatcher(None, base_norm, stem).ratio()
+            if base_norm[:4] and base_norm[:4] in stem:
+                score += 0.12
+            scored.append((score, item))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        if scored and scored[0][0] >= 0.52:
+            return scored[0][1]
+        return "ITEM_NONE"
+
+    def _render_mechanics_rows(self) -> None:
+        tag = TAGS.get("mechanics_rows")
+        if not tag or not dpg.does_item_exist(tag):
+            return
+        dpg.delete_item(tag, children_only=True)
+        self._mechanics_row_map = []
+        self._mechanics_row_tags = []
+        detected_targets: set[str] = set()
+        for row in self.state.evolution_rows:
+            m = str(row.get("method") or "")
+            if not (self._method_matches_kind(m, "mega") or self._method_matches_kind(m, "gmax")):
+                continue
+            kind = "mega" if self._method_matches_kind(m, "mega") else "gmax"
+            target = str(row.get("target") or "")
+            detected_targets.add(target)
+            evo_index = self.state.evolution_rows.index(row)
+            row_param = str(row.get("param") or "0")
+            row_item = row_param if row_param.startswith("ITEM_") else "ITEM_NONE"
+            self._mechanics_row_map.append({"kind": kind, "method": m, "param": row_param, "target": target, "item": row_item, "from_evo": True, "evo_index": evo_index})
+
+        for kind in ("mega", "gmax"):
+            for target in self._suggest_targets_for_kind(kind):
+                if target in detected_targets:
+                    continue
+                self._mechanics_row_map.append({"kind": kind, "method": self._pick_method_for_kind(kind), "param": "0", "target": target, "item": self._suggest_item_for_target(target) if kind == "mega" else "ITEM_NONE", "from_evo": False, "evo_index": -1})
+
+        kind_order = {"mega": 0, "gmax": 1}
+        self._mechanics_row_map.sort(
+            key=lambda r: (
+                0 if not bool(r.get("from_evo")) else 1,
+                kind_order.get(str(r.get("kind") or ""), 9),
+                str(r.get("target") or ""),
+            )
+        )
+
+        if not self._mechanics_row_map:
+            dpg.add_text("No mechanics rows detected", parent=tag)
+            return
+        for idx, row in enumerate(self._mechanics_row_map):
+            src = "configured" if bool(row.get("from_evo")) else "detected"
+            item = str(row.get("item") or "ITEM_NONE")
+            item_txt = f" | {item}" if item != "ITEM_NONE" else ""
+            label = f"{str(row.get('kind','')).upper()} | {row.get('target','')}{item_txt} [{src}]"
+            row_tag = f"mech_row_{idx}"
+            self._mechanics_row_tags.append(row_tag)
+            dpg.add_selectable(
+                label=label,
+                tag=row_tag,
+                parent=tag,
+                callback=self.select_mechanics_row,
+                user_data=idx,
+                default_value=(idx == self.state.selected_mechanics_index),
+            )
+            self._bind_mechanics_row_theme(row_tag, bool(row.get("from_evo")))
+
+            target = str(row.get("target") or "").strip()
+            target_constant = self._extract_species_constant(target)
+            tooltip_text = target or "Unknown target"
+            tex_tag, w, h = "tex_front", self._evo_tooltip_scale_px, self._evo_tooltip_scale_px
+            if self.editor and self.state.project_loaded and target_constant:
+                species = self.editor.species_by_constant.get(target_constant)
+                if species and species.folder_name:
+                    try:
+                        tex_tag, w, h = self._evo_tooltip_texture(str(species.folder_name), 0)
+                    except Exception:
+                        pass
+            with dpg.tooltip(row_tag):
+                dpg.add_text(tooltip_text)
+                dpg.add_image(tex_tag, width=w, height=h)
+
+    def _bind_mechanics_row_theme(self, row_tag: str, is_configured: bool) -> None:
+        if is_configured:
+            if self._mechanics_cfg_theme is None:
+                with dpg.theme() as self._mechanics_cfg_theme:
+                    with dpg.theme_component(dpg.mvSelectable):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (190, 245, 210, 255))
+            if dpg.does_item_exist(row_tag):
+                dpg.bind_item_theme(row_tag, self._mechanics_cfg_theme)
+        else:
+            if self._mechanics_detected_theme is None:
+                with dpg.theme() as self._mechanics_detected_theme:
+                    with dpg.theme_component(dpg.mvSelectable):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (160, 205, 245, 255))
+            if dpg.does_item_exist(row_tag):
+                dpg.bind_item_theme(row_tag, self._mechanics_detected_theme)
+
+    def _sync_mechanics_tab_from_rows(self) -> None:
+        self.state.selected_mechanics_index = -1
+        if dpg.does_item_exist("mech_kind"):
+            dpg.set_value("mech_kind", "mega")
+        if dpg.does_item_exist("mech_item"):
+            dpg.set_value("mech_item", "ITEM_NONE")
+        if dpg.does_item_exist("mech_target"):
+            suggested = self._suggest_target_for_kind("mega")
+            if suggested:
+                dpg.set_value("mech_target", suggested)
+                if dpg.does_item_exist("mech_item"):
+                    dpg.set_value("mech_item", self._suggest_item_for_target(suggested))
+        self._refresh_mechanics_picker_labels()
+        self._render_mechanics_rows()
+
+    def select_mechanics_row(self, sender=None, app_data=None, user_data=None) -> None:
+        try:
+            idx = int(user_data)
+        except Exception:
+            return
+        if idx < 0 or idx >= len(self._mechanics_row_map):
+            return
+        row = self._mechanics_row_map[idx]
+        kind = str(row.get("kind") or "")
+        item = str(row.get("item") or "ITEM_NONE")
+        target = str(row.get("target") or "")
+        self.state.selected_mechanics_index = idx
+        for i, tag in enumerate(self._mechanics_row_tags):
+            if dpg.does_item_exist(tag):
+                dpg.set_value(tag, i == idx)
+        if dpg.does_item_exist("mech_kind"):
+            dpg.set_value("mech_kind", kind or "mega")
+        if dpg.does_item_exist("mech_item"):
+            dpg.set_value("mech_item", item)
+        if dpg.does_item_exist("mech_target"):
+            dpg.set_value("mech_target", target)
+        self._refresh_mechanics_picker_labels()
+
+        now = time.monotonic()
+        if self._mechanics_last_click_index == idx and (now - self._mechanics_last_click_time) <= 0.4:
+            self._jump_to_species_from_evolution_target(target)
+        self._mechanics_last_click_index = idx
+        self._mechanics_last_click_time = now
+
+    def _mechanics_row_from_ui(self) -> dict[str, str] | None:
+        kind = str(dpg.get_value("mech_kind") or "mega").strip() if dpg.does_item_exist("mech_kind") else "mega"
+        method = self._pick_method_for_kind(kind)
+        item = str(dpg.get_value("mech_item") or "ITEM_NONE").strip() if dpg.does_item_exist("mech_item") else "ITEM_NONE"
+        param = item if (kind == "mega" and item.startswith("ITEM_")) else "0"
+        target = str(dpg.get_value("mech_target") or "").strip() if dpg.does_item_exist("mech_target") else ""
+        if not target:
+            self._set_message("Select target species for mechanic")
+            return None
+        if kind not in {"mega", "gmax"}:
+            kind = "mega"
+        return {"kind": kind, "method": method, "param": param, "target": target, "item": item}
+
+    def on_mechanics_kind_change(self, sender=None, app_data=None, user_data=None) -> None:
+        kind = str(dpg.get_value("mech_kind") or "mega").strip() if dpg.does_item_exist("mech_kind") else "mega"
+        if dpg.does_item_exist("mech_target"):
+            suggested = self._suggest_target_for_kind(kind)
+            if suggested:
+                dpg.set_value("mech_target", suggested)
+                if dpg.does_item_exist("mech_item"):
+                    dpg.set_value("mech_item", self._suggest_item_for_target(suggested) if kind == "mega" else "ITEM_NONE")
+        self._refresh_mechanics_picker_labels()
+
+    def add_mechanics_row(self, sender=None, app_data=None, user_data=None) -> None:
+        row_ui = self._mechanics_row_from_ui()
+        if row_ui is None:
+            return
+        row = {"method": row_ui["method"], "param": row_ui["param"], "target": row_ui["target"]}
+        self.state.evolution_rows.append(row)
+        self.state.selected_mechanics_index = -1
+        self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
+        self.mark_dirty()
+
+    def update_mechanics_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_mechanics_index
+        if idx < 0 or idx >= len(self._mechanics_row_map):
+            self._set_message("Select a mechanics row to update")
+            return
+        row_ui = self._mechanics_row_from_ui()
+        if row_ui is None:
+            return
+        evo_index = int(self._mechanics_row_map[idx].get("evo_index", -1))
+        row = {"method": row_ui["method"], "param": row_ui["param"], "target": row_ui["target"]}
+        if evo_index >= 0 and evo_index < len(self.state.evolution_rows):
+            self.state.evolution_rows[evo_index] = row
+        else:
+            self.state.evolution_rows.append(row)
+        self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
+        self.mark_dirty()
+
+    def remove_mechanics_row(self, sender=None, app_data=None, user_data=None) -> None:
+        idx = self.state.selected_mechanics_index
+        if idx < 0 or idx >= len(self._mechanics_row_map):
+            self._set_message("Select a mechanics row to remove")
+            return
+        evo_index = int(self._mechanics_row_map[idx].get("evo_index", -1))
+        if evo_index >= 0 and evo_index < len(self.state.evolution_rows):
+            del self.state.evolution_rows[evo_index]
+            self._render_evo_rows()
+            self._sync_mechanics_tab_from_rows()
+            self.mark_dirty()
+
+    def _apply_mechanic_from_ui(self, kind: str) -> None:
+        # Backward compatible shim.
+        if dpg.does_item_exist("mech_kind"):
+            dpg.set_value("mech_kind", kind)
+        self.add_mechanics_row()
+
+    def apply_mega_mechanic(self, sender=None, app_data=None, user_data=None) -> None:
+        self._apply_mechanic_from_ui("mega")
+
+    def apply_gmax_mechanic(self, sender=None, app_data=None, user_data=None) -> None:
+        self._apply_mechanic_from_ui("gmax")
+
+    @staticmethod
     def _extract_species_constant(text: str) -> str:
         m = re.search(r"\bSPECIES_[A-Z0-9_]+\b", str(text or ""))
         return m.group(0) if m else ""
@@ -1603,6 +2400,8 @@ class GuiActions:
         if dpg.does_item_exist("evo_friendship_label"):
             dpg.configure_item("evo_friendship_label", show=is_friendship)
         dpg.configure_item("evo_item_param", show=is_item)
+        if dpg.does_item_exist("evo_item_search"):
+            dpg.configure_item("evo_item_search", show=is_item)
         if dpg.does_item_exist("evo_item_label"):
             dpg.configure_item("evo_item_label", show=is_item)
         dpg.configure_item("evo_trade_item_param", show=is_trade_item)
@@ -1616,6 +2415,8 @@ class GuiActions:
         current = str(dpg.get_value("evo_param") or "").strip()
         if is_item:
             dpg.set_value("evo_item_param", current if current in options else options[0])
+            if dpg.does_item_exist("evo_item_search") and str(dpg.get_value("evo_item_search") or ""):
+                self._refresh_evo_item_picker()
         elif is_trade_item:
             dpg.set_value("evo_trade_item_param", current if current in options else "ITEM_NONE")
         elif is_level:
@@ -2032,6 +2833,16 @@ class GuiActions:
         if selected is None:
             return
 
+        selected_species_obj = selected.get("species")
+        species_mech = detect_species_mechanics(
+            constant,
+            getattr(selected_species_obj, "evolutions_raw", None) if selected_species_obj is not None else None,
+            [str(x.get("constant_name") or "") for x in self.state.species_list],
+        )
+        self.state.selected_species_mechanics = dict(species_mech.flags)
+        self.state.selected_species_mechanics_evidence = list(species_mech.evidence)
+        self._refresh_mechanics_info()
+
         species = selected.get("species")
         if species is None:
             self.state.selected_species_constant = constant
@@ -2057,11 +2868,13 @@ class GuiActions:
             self.state.teachable_rows = []
             self.state.tutor_rows = []
             self._render_evo_rows()
+            self._sync_mechanics_tab_from_rows()
             self._render_levelup_rows()
             self._render_teachable_rows()
             self._render_tutor_rows()
             self._render_evolution_condition_rows()
             self._sync_evolution_param_widget()
+            self._ensure_evo_target_selected()
             self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
             self.state.editor_data = self._read_editor_from_ui()
             self.state.editor_dirty = False
@@ -2072,6 +2885,7 @@ class GuiActions:
             self._refresh_apply_enabled()
             self._refresh_type_icons()
             self._refresh_stats_radar()
+            self._refresh_aux_picker_labels()
             self.request_preview_refresh()
             return
 
@@ -2131,6 +2945,7 @@ class GuiActions:
         if dpg.does_item_exist("evo_condition_value_int"):
             dpg.set_value("evo_condition_value_int", 0)
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self._render_evolution_condition_rows()
         self.state.level_up_rows = list(species.level_up_moves or [])
         tmhm_set = set(self.state.tmhm_options)
@@ -2144,6 +2959,7 @@ class GuiActions:
             dpg.set_value("description", str(species.description or ""))
             self._last_valid_description = self._normalize_description_text(str(species.description or ""))
         self._sync_evolution_param_widget()
+        self._ensure_evo_target_selected()
         self.state.editor_data = self._read_editor_from_ui()
         self.state.editor_dirty = False
         self.state.validation_ok = False
@@ -2153,6 +2969,7 @@ class GuiActions:
         self._refresh_apply_enabled()
         self._refresh_type_icons()
         self._refresh_stats_radar()
+        self._refresh_aux_picker_labels()
         self.request_preview_refresh()
 
     def _read_editor_from_ui(self) -> dict:
@@ -2343,6 +3160,8 @@ class GuiActions:
 
     def new_species(self, sender=None, app_data=None, user_data=None) -> None:
         self.state.preview_palette_mode = "normal"
+        self.state.selected_species_mechanics = {}
+        self.state.selected_species_mechanics_evidence = []
         data = default_editor_data()
         data["mode"] = "add"
         draft_constant = self._next_draft_species_constant()
@@ -2361,6 +3180,7 @@ class GuiActions:
         self.state.teachable_rows = []
         self.state.tutor_rows = []
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self._render_levelup_rows()
         self._render_teachable_rows()
         self._render_tutor_rows()
@@ -2380,6 +3200,7 @@ class GuiActions:
         self._status_validation = "idle"
         self.state.selected_species_constant = data["constant_name"]
         self._refresh_type_icons()
+        self._refresh_aux_picker_labels()
         self.mark_dirty()
 
     @staticmethod
@@ -2417,6 +3238,8 @@ class GuiActions:
             return
 
         self.state.preview_palette_mode = "normal"
+        self.state.selected_species_mechanics = {}
+        self.state.selected_species_mechanics_evidence = []
         data = self._read_editor_from_ui()
         data["mode"] = "add"
 
@@ -2450,6 +3273,7 @@ class GuiActions:
         self.state.selected_species_constant = data["constant_name"]
         dpg.configure_item(TAGS["delete_btn"], show=False)
         self._last_valid_description = self._normalize_description_text(str(dpg.get_value("description") or ""))
+        self._refresh_aux_picker_labels()
         self.mark_dirty()
         self._set_message(f"Duplicated as {data['constant_name']}")
 
@@ -2714,6 +3538,7 @@ class GuiActions:
         self.state.evolution_rows.append({"method": method, "param": param, "target": target})
         self.state.selected_evolution_index = len(self.state.evolution_rows) - 1
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self.mark_dirty()
 
     def update_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
@@ -2730,6 +3555,7 @@ class GuiActions:
             return
         self.state.evolution_rows[idx] = {"method": method, "param": param, "target": target}
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self.mark_dirty()
 
     def remove_evolution_row(self, sender=None, app_data=None, user_data=None) -> None:
@@ -2740,6 +3566,7 @@ class GuiActions:
         del self.state.evolution_rows[idx]
         self.state.selected_evolution_index = -1
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self.mark_dirty()
 
     def clear_evolutions(self, sender=None, app_data=None, user_data=None) -> None:
@@ -2748,6 +3575,7 @@ class GuiActions:
         self.state.evolution_condition_rows = []
         self.state.selected_evolution_condition_index = -1
         self._render_evo_rows()
+        self._sync_mechanics_tab_from_rows()
         self._render_evolution_condition_rows()
         self.mark_dirty()
 

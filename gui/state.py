@@ -51,6 +51,11 @@ class GuiState:
     selected_tutor_index: int = -1
     preview_frame_index: int = 0
     preview_palette_mode: str = "normal"
+    mechanics_capabilities: dict[str, bool] = field(default_factory=dict)
+    mechanics_evidence: dict[str, list[str]] = field(default_factory=dict)
+    selected_species_mechanics: dict[str, bool] = field(default_factory=dict)
+    selected_species_mechanics_evidence: list[str] = field(default_factory=list)
+    selected_mechanics_index: int = -1
 
 
 def default_editor_data() -> dict[str, Any]:

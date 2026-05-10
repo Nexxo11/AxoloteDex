@@ -46,6 +46,7 @@ TAGS = {
     "lint_status": "lint_status",
     "lint_output": "lint_output",
     "evo_rows": "evo_rows",
+    "mechanics_rows": "mechanics_rows",
     "evo_hover_preview": "evo_hover_preview",
     "evo_hover_img": "evo_hover_img",
     "evo_hover_text": "evo_hover_text",
@@ -67,6 +68,24 @@ TAGS = {
     "type2_modal": "type2_modal",
     "type1_list": "type1_list",
     "type2_list": "type2_list",
+    "mech_item_modal": "mech_item_modal",
+    "mech_target_modal": "mech_target_modal",
+    "mech_item_list": "mech_item_list",
+    "mech_target_list": "mech_target_list",
+    "evo_target_modal": "evo_target_modal",
+    "evo_target_list": "evo_target_list",
+    "evo_item_modal": "evo_item_modal",
+    "evo_item_list": "evo_item_list",
+    "picker_hover_preview": "picker_hover_preview",
+    "picker_hover_img": "picker_hover_img",
+    "cry_modal": "cry_modal",
+    "cry_list": "cry_list",
+    "move_modal": "move_modal",
+    "move_list": "move_list",
+    "tmhm_modal": "tmhm_modal",
+    "tmhm_list": "tmhm_list",
+    "tutor_modal": "tutor_modal",
+    "tutor_list": "tutor_list",
     "path_dialog": "path_dialog",
     "delete_replace_trainers_random": "delete_replace_trainers_random",
     "compat_status": "compat_status",
@@ -211,7 +230,6 @@ def build_layout(actions) -> None:
             dpg.add_text("About Me")
             dpg.add_separator()
             dpg.add_text("AxoloteDex")
-            dpg.add_text("Created by Nexxo")
             dpg.add_text("Pokemon species editor for pokeemerald-expansion")
             dpg.add_spacer(height=14)
 
@@ -263,12 +281,28 @@ def build_layout(actions) -> None:
             no_move=True,
             no_scrollbar=True,
             no_collapse=True,
+            no_background=True,
             no_focus_on_appearing=True,
             width=170,
             height=170,
         ):
             dpg.add_text("", tag=TAGS["evo_hover_text"])
             dpg.add_image("tex_front", tag=TAGS["evo_hover_img"], width=128, height=128)
+
+        with dpg.window(
+            tag=TAGS["picker_hover_preview"],
+            show=False,
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
+            no_scrollbar=True,
+            no_collapse=True,
+            no_background=True,
+            no_focus_on_appearing=True,
+            width=170,
+            height=170,
+        ):
+            dpg.add_image("tex_front", tag=TAGS["picker_hover_img"], width=128, height=128)
 
 
 def _build_header(actions) -> None:
@@ -354,6 +388,7 @@ def _build_editor_tab(actions) -> None:
                             with dpg.group():
                                 dpg.add_text("Cry ID")
                                 with dpg.group(horizontal=True):
+                                    dpg.add_input_text(tag="cry_search", hint="Search cry...", width=220, callback=actions.on_cry_search_change)
                                     dpg.add_combo(["CRY_NONE"], tag="cry_id", callback=actions.mark_dirty, width=320)
                                     dpg.add_button(label="▶", tag=TAGS["cry_play_btn"], callback=actions.play_selected_cry, width=40)
                                 with dpg.tooltip(TAGS["cry_play_btn"]):
@@ -461,13 +496,14 @@ def _build_editor_tab(actions) -> None:
                     dpg.add_input_int(tag="evo_friendship_param", width=120, min_value=1, max_value=255, min_clamped=True, max_clamped=True, default_value=220, show=False, callback=actions.mark_dirty)
                     dpg.add_text("Item", tag="evo_item_label")
                     dpg.add_combo(["ITEM_NONE"], tag="evo_item_param", width=260, show=False, callback=actions.on_evolution_item_change)
+                    dpg.add_input_text(tag="evo_item_search", hint="Search item...", width=220, show=False, callback=actions.on_evo_item_search_change)
                     dpg.add_text("Trade item", tag="evo_trade_item_label")
                     dpg.add_combo(["ITEM_NONE"], tag="evo_trade_item_param", width=260, show=False, callback=actions.on_evolution_trade_item_change)
                     dpg.add_text("Param", tag="evo_param_label")
                     dpg.add_input_text(tag="evo_param", width=120, show=False)
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Target species")
-                    dpg.add_combo([], tag="evo_target", width=420, callback=actions.mark_dirty)
+                dpg.add_text("Target species")
+                dpg.add_input_text(tag="evo_target_search", hint="Search target species...", width=420, callback=actions.on_evo_target_search_change)
+                dpg.add_combo([], tag="evo_target", width=420, callback=actions.mark_dirty)
                 with dpg.group(horizontal=True):
                     dpg.add_checkbox(label="Condition", tag="evo_condition_enabled", callback=actions.on_evolution_condition_toggle)
                     dpg.add_combo(["IF_KNOWS_MOVE"], tag="evo_condition_type", width=220, callback=actions.on_evolution_condition_type_change, show=False)
@@ -485,12 +521,30 @@ def _build_editor_tab(actions) -> None:
                     dpg.add_button(label="Remove", callback=actions.remove_evolution_row)
                 dpg.add_child_window(tag=TAGS["evo_rows"], width=580, height=210, border=True)
 
+        with dpg.tab(label="Mechanics"):
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Kind")
+                    dpg.add_combo(["mega", "gmax"], tag="mech_kind", width=120, default_value="mega", callback=actions.on_mechanics_kind_change)
+                    dpg.add_text("Required item")
+                dpg.add_input_text(tag="mech_item_search", hint="Search item...", width=260, callback=actions.on_mechanics_item_search_change)
+                dpg.add_combo(["ITEM_NONE"], tag="mech_item", width=260)
+                dpg.add_text("Target species")
+                dpg.add_input_text(tag="mech_target_search", hint="Search target species...", width=420, callback=actions.on_mechanics_target_search_change)
+                dpg.add_combo([], tag="mech_target", width=540)
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="Add", callback=actions.add_mechanics_row)
+                    dpg.add_button(label="Update", callback=actions.update_mechanics_row)
+                    dpg.add_button(label="Remove", callback=actions.remove_mechanics_row)
+                dpg.add_spacer(height=8)
+                dpg.add_child_window(tag=TAGS["mechanics_rows"], width=-1, height=190, border=True)
+
         with dpg.tab(label="Learnsets"):
                 with dpg.group(horizontal=True):
                     with dpg.child_window(tag=TAGS["learnset_level_panel"], width=430, height=284, border=False):
                         dpg.add_text("Level-up moves")
                         with dpg.group(horizontal=True):
                             dpg.add_input_int(label="Level", tag="move_level", default_value=1, min_value=1, max_value=100, width=90)
+                            dpg.add_input_text(tag="move_search", hint="Search move...", width=200, callback=actions.on_move_search_change)
                             dpg.add_combo(["MOVE_TACKLE"], label="Move", tag="move_name", width=260)
                             dpg.add_button(label="Add", callback=actions.add_levelup_move)
                             dpg.add_button(label="Remove", callback=actions.remove_levelup_move)
@@ -500,6 +554,7 @@ def _build_editor_tab(actions) -> None:
                     with dpg.child_window(tag=TAGS["learnset_tmhm_panel"], width=430, height=284, border=False):
                         dpg.add_text("TM/HM")
                         with dpg.group(horizontal=True):
+                            dpg.add_input_text(tag="tmhm_search", hint="Search TM/HM move...", width=200, callback=actions.on_tmhm_search_change)
                             dpg.add_combo(["MOVE_TACKLE"], label="TM/HM Move", tag="tmhm_move", width=300)
                             dpg.add_button(label="Add TM/HM", callback=actions.add_teachable_move)
                             dpg.add_button(label="Remove TM/HM", callback=actions.remove_teachable_move)
@@ -507,6 +562,7 @@ def _build_editor_tab(actions) -> None:
                 dpg.add_spacer(height=8)
                 dpg.add_text("Move Tutor")
                 with dpg.group(horizontal=True):
+                    dpg.add_input_text(tag="tutor_search", hint="Search tutor move...", width=200, callback=actions.on_tutor_search_change)
                     dpg.add_combo(["MOVE_TACKLE"], label="Tutor Move", tag="tutor_move", width=300)
                     dpg.add_button(label="Add Tutor", callback=actions.add_tutor_move)
                     dpg.add_button(label="Remove Tutor", callback=actions.remove_tutor_move)
@@ -568,7 +624,6 @@ def _build_build_tab(actions) -> None:
     dpg.add_input_text(tag=TAGS["build_output"], multiline=True, readonly=True, width=-1, height=560)
     dpg.add_text("Ready", tag=TAGS["message_text"], color=(180, 190, 210, 255))
     with dpg.group(horizontal=True):
-        dpg.add_text("AxoloteDex v0.6.0 by Nexxo", tag=TAGS["version_text"], color=(168, 163, 184, 255))
         dpg.add_spacer(width=18)
         dpg.add_text("Project: idle", tag=TAGS["status_project"])
         dpg.add_spacer(width=12)
