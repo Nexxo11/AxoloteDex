@@ -1,4 +1,4 @@
-# AxoloteDex (ASA)
+# AxoloteDex
 
 > Safe species editing for `pokeemerald-expansion`.
 
